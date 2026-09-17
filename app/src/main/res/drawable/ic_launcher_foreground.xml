@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Shield -->
+    <path
+        android:fillColor="#E8F4F2"
+        android:pathData="M54,18 L86,30 v22 c0,22 -14,36 -32,42 C36,88 22,74 22,52 V30 Z" />
+    <path
+        android:fillColor="#0F766E"
+        android:pathData="M54,22 L82,32 v20 c0,19 -12,31 -28,36 C38,83 26,71 26,52 V32 Z" />
+    <!-- Invoice page -->
+    <path
+        android:fillColor="#E8F4F2"
+        android:pathData="M40,38 h28 c2,0 4,2 4,4 v28 c0,2 -2,4 -4,4 H40 c-2,0 -4,-2 -4,-4 V42 c0,-2 2,-4 4,-4z" />
+    <path
+        android:fillColor="#0B3A4A"
+        android:pathData="M44,48 h16 v3 H44z M44,55 h20 v2.5 H44z M44,61 h14 v2.5 H44z" />
+    <!-- Accent check -->
+    <path
+        android:fillColor="#D4A017"
+        android:pathData="M62,64 l4,4 8,-10 3,2 -11,14 -7,-7z" />
+</vector>

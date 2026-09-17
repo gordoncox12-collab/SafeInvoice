@@ -1,0 +1,73 @@
+name: Android
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Accept Android SDK licences
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SM="$(find "$SDK/cmdline-tools" -type f -name sdkmanager | head -1)"
+          echo "sdkmanager=$SM"
+          yes | "$SM" --licenses || true
+      - name: Unit tests and debug APK
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest --no-daemon
+      - name: Write signing config when secrets are present
+        id: signing
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          if [ -n "$KEYSTORE_PASSWORD" ] && [ -f app/play-upload.jks ]; then
+            {
+              echo "storeFile=app/play-upload.jks"
+              echo "storePassword=$KEYSTORE_PASSWORD"
+              echo "keyAlias=${KEY_ALIAS:-upload}"
+              echo "keyPassword=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+            } > keystore.properties
+            echo "has_signing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_signing=false" >> "$GITHUB_OUTPUT"
+            echo "No KEYSTORE_PASSWORD secret — skipping signed Play artefacts."
+          fi
+      - name: Release bundle and APK
+        if: startsWith(github.ref, 'refs/tags/') && steps.signing.outputs.has_signing == 'true'
+        run: |
+          ./gradlew :app:bundleRelease :app:assembleRelease --no-daemon
+          cp app/build/outputs/bundle/release/app-release.aab SafeInvoice.aab
+          cp app/build/outputs/apk/release/app-release.apk SafeInvoice-release.apk
+          file SafeInvoice.aab SafeInvoice-release.apk
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/') && steps.signing.outputs.has_signing == 'true'
+        with:
+          name: SafeInvoice-play
+          path: |
+            SafeInvoice.aab
+            SafeInvoice-release.apk
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') && steps.signing.outputs.has_signing == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            SafeInvoice.aab
+            SafeInvoice-release.apk
+          generate_release_notes: true
+          body: |
+            Signed Play AAB and sideload APK for SafeInvoice.
+            This repository is private: anonymous phone sideload without GitHub login
+            needs the repo set to public, or a public release mirror.
+          make_latest: true
