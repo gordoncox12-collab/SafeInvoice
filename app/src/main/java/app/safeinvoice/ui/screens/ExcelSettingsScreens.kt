@@ -59,7 +59,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import app.safeinvoice.BuildConfig
 import app.safeinvoice.data.entity.AccentPalette
-import app.safeinvoice.data.entity.FolderType
 import app.safeinvoice.data.entity.InvoiceTemplateEntity
 import app.safeinvoice.data.entity.LogoAlignment
 import app.safeinvoice.data.entity.MarginPreset

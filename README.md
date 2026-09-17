@@ -21,12 +21,11 @@ This GitHub repository is **private**. A GitHub Release can still hold APK/AAB a
 1. Set this repository to **public**, or
 2. Host a public release mirror (another public repo, Drive, or a simple download page).
 
-After a `v1.0.0` release exists, the intended URLs are:
+Release **v1.0.0** is published (login required while the repo is private):
 
-- Sideload APK: `https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v1.0.0/SafeInvoice-release.apk`
-- Play AAB: `https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v1.0.0/SafeInvoice.aab`
-
-Debug APK (sideloadable, debug-signed): `SafeInvoice-debug.apk` on the same release.
+- Sideload APK: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v1.0.0/SafeInvoice-release.apk
+- Debug APK: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v1.0.0/SafeInvoice-debug.apk
+- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v1.0.0/SafeInvoice.aab
 
 ## First launch (no seed data)
 

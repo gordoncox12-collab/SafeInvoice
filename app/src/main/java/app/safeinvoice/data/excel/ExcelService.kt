@@ -209,9 +209,21 @@ object InvoiceImportFields {
 
 fun guessMapping(headers: List<String>, fields: List<Pair<String, String>>): Map<String, Int> {
     val normalized = headers.map { it.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "") }
+    val extraAliases = mapOf(
+        "quantity" to listOf("qty", "qnty", "amountqty"),
+        "unitPrice" to listOf("price", "rate", "unitcost"),
+        "customerName" to listOf("client", "clientname", "customer"),
+        "vatNumber" to listOf("vat", "taxnumber", "vatno"),
+        "postalCode" to listOf("postcode", "zip", "zipcode"),
+        "contactName" to listOf("contact", "attn", "attention"),
+        "addressLine1" to listOf("address", "street"),
+    )
     return fields.associate { (key, label) ->
-        val aliases = listOf(key, label).map { it.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "") }
-        val idx = normalized.indexOfFirst { h -> aliases.any { a -> h.contains(a) || a.contains(h) } }
+        val aliases = (listOf(key, label) + (extraAliases[key] ?: emptyList()))
+            .map { it.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "") }
+        val idx = normalized.indexOfFirst { h ->
+            h.isNotBlank() && aliases.any { a -> a.isNotBlank() && (h == a || h.contains(a) || a.contains(h)) }
+        }
         key to idx
     }
 }
