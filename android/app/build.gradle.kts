@@ -43,6 +43,10 @@ android {
                 storePassword = signingValue("KEYSTORE_PASSWORD") ?: signingValue("storePassword") ?: ""
                 keyAlias = signingValue("KEY_ALIAS") ?: signingValue("keyAlias") ?: "upload"
                 keyPassword = signingValue("KEY_PASSWORD") ?: signingValue("keyPassword") ?: ""
+                // AGP disables v1 (JAR) signing by default when minSdk >= 24.
+                // Many OEM / "APK Installer" apps still require v1 + v2.
+                enableV1Signing = true
+                enableV2Signing = true
             }
         }
     }

@@ -6,7 +6,7 @@ Every business, customer, invoice, signature, spreadsheet and receipt lives on t
 
 - **App name:** SafeInvoice
 - **Application ID:** `app.safeinvoice`
-- **Version:** 2.1.0 (versionCode 3)
+- **Version:** 2.1.1 (versionCode 4)
 - **Flutter SDK:** 3.47.1 (Dart 3.13.1)
 - **Min SDK:** 26 (Android 8.0)
 - **UI:** Flutter, Material 3
@@ -20,8 +20,8 @@ This Flutter rebuild replaces the previous Kotlin/Compose Android project. Do no
 
 The repository is public. Download the Flutter release artefacts without a GitHub login:
 
-- Sideload APK: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.1.0/SafeInvoice-flutter-release.apk
-- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.1.0/SafeInvoice-flutter-release.aab
+- Sideload APK: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.1.1/SafeInvoice-flutter-release.apk
+- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.1.1/SafeInvoice-flutter-release.aab
 
 ## First launch (no seed data)
 
@@ -31,7 +31,7 @@ A default “Standard” invoice template (ZAR, 15% VAT, classic layout) is crea
 
 ### How to test (pre-launch)
 
-1. Install the v2.1.0 APK.
+1. Install the v2.1.1 APK (v1 + v2 signed, so OEM APK installers can open it).
 2. Create a business (name is enough).
 3. **More → Products catalog** (or Home step 2): add a product with name, unit price, VAT on/off.
 4. **Customers**: add a customer.
