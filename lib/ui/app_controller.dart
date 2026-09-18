@@ -114,9 +114,14 @@ class AppController extends ChangeNotifier {
     required List<InvoiceLineItem> items,
     required bool bumpNumber,
   }) async {
-    final saved = await repo.saveInvoice(invoice: invoice, items: items, bumpNumber: bumpNumber);
-    await refresh();
-    return saved;
+    try {
+      final saved = await repo.saveInvoice(invoice: invoice, items: items, bumpNumber: bumpNumber);
+      await refresh();
+      return saved;
+    } catch (e, st) {
+      debugPrint('AppController.saveInvoice failed: $e\n$st');
+      rethrow;
+    }
   }
 
   Future<void> deleteInvoice(Invoice invoice) async {

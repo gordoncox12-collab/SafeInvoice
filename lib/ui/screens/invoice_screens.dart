@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:signature/signature.dart';
 
 import '../../data/native_share.dart';
+import '../../data/repository.dart';
 import '../../domain/models.dart';
 import '../../domain/money.dart';
 import '../app_controller.dart';
@@ -274,24 +274,26 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
               ),
             ],
           ),
-          DropdownButtonFormField<InvoiceStatus>(
-            initialValue: status,
-            decoration: const InputDecoration(labelText: 'Status'),
-            items: [
-              for (final s in InvoiceStatus.values)
-                DropdownMenuItem(value: s, child: Text(niceEnum(s))),
-            ],
+          SearchableSelect<InvoiceStatus>(
+            label: 'Status',
+            value: status,
+            items: InvoiceStatus.values,
+            searchHint: 'Search status',
+            labelOf: niceEnum,
             onChanged: (v) => setState(() => status = v ?? status),
           ),
           const SizedBox(height: 12),
           if (app.templates.isNotEmpty)
-            DropdownButtonFormField<String>(
-              initialValue: templateId ?? app.templates.first.id,
-              decoration: const InputDecoration(labelText: 'Template'),
-              items: [
-                for (final t in app.templates) DropdownMenuItem(value: t.id, child: Text(t.name)),
-              ],
-              onChanged: (v) => setState(() => templateId = v),
+            SearchableSelect<InvoiceTemplate>(
+              label: 'Template',
+              value: app.templates.where((t) => t.id == templateId).firstOrNull ??
+                  app.templates.where((t) => t.isDefault).firstOrNull ??
+                  app.templates.first,
+              items: app.templates,
+              searchHint: 'Search templates',
+              labelOf: (t) => t.name,
+              subtitleOf: (t) => niceEnum(t.layout),
+              onChanged: (t) => setState(() => templateId = t?.id),
             ),
           const SizedBox(height: 16),
           Row(
@@ -382,14 +384,7 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
                   setState(() => items[index] = item.copyWith(clearProduct: true));
                   return;
                 }
-                setState(() {
-                  items[index] = item.copyWith(
-                    productId: p.id,
-                    description: p.description == null || p.description!.isEmpty ? p.name : '${p.name} — ${p.description}',
-                    unitPrice: p.unitPrice,
-                    taxable: p.taxable,
-                  );
-                });
+                setState(() => items[index] = item.applyProduct(p));
               },
             ),
             const SizedBox(height: 8),
@@ -447,32 +442,52 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
 
   Future<void> _save() async {
     final app = context.read<AppController>();
-    final cid = customerId ?? app.customers.first.id;
-    final saved = await app.saveInvoice(
-      invoice: invoice!.copyWith(
-        customerId: cid,
-        status: status,
-        issueDate: issueDate,
-        dueDate: dueDate,
-        currency: currency.text.trim().isEmpty ? 'ZAR' : currency.text.trim().toUpperCase(),
-        vatPercent: double.tryParse(vatPercent.text) ?? 15,
-        discountAmount: double.tryParse(discountAmount.text) ?? 0,
-        discountPercent: double.tryParse(discountPercent.text) ?? 0,
-        notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
-        terms: terms.text.trim().isEmpty ? null : terms.text.trim(),
-        templateId: templateId,
-      ),
-      items: [
-        for (var i = 0; i < items.length; i++) items[i].copyWith(position: i),
-      ],
-      bumpNumber: bump,
+    final cid = customerId?.trim() ?? '';
+    if (cid.isEmpty || app.customers.every((c) => c.id != cid)) {
+      await showSnack(context, 'Select a customer before saving.');
+      return;
+    }
+    final hasLine = items.any(
+      (i) => i.description.trim().isNotEmpty || (i.productId != null && i.productId!.trim().isNotEmpty),
     );
-    bump = false;
-    invoice = saved;
-    if (!mounted) return;
-    await showSnack(context, 'Saved ${saved.number}');
-    if (!mounted) return;
-    context.go('/invoice-view/${saved.id}');
+    if (!hasLine) {
+      await showSnack(context, 'Add a product or a description on at least one line.');
+      return;
+    }
+    try {
+      final saved = await app.saveInvoice(
+        invoice: invoice!.copyWith(
+          customerId: cid,
+          status: status,
+          issueDate: issueDate,
+          dueDate: dueDate,
+          currency: currency.text.trim().isEmpty ? 'ZAR' : currency.text.trim().toUpperCase(),
+          vatPercent: double.tryParse(vatPercent.text) ?? 15,
+          discountAmount: double.tryParse(discountAmount.text) ?? 0,
+          discountPercent: double.tryParse(discountPercent.text) ?? 0,
+          notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
+          terms: terms.text.trim().isEmpty ? null : terms.text.trim(),
+          templateId: templateId,
+        ),
+        items: [
+          for (var i = 0; i < items.length; i++) items[i].copyWith(position: i),
+        ],
+        bumpNumber: bump,
+      );
+      bump = false;
+      invoice = saved;
+      if (!mounted) return;
+      await showSnack(context, 'Saved ${saved.number}');
+      if (!mounted) return;
+      context.go('/invoice-view/${saved.id}');
+    } catch (e, st) {
+      debugPrint('Invoice create/save failed: $e\n$st');
+      if (!mounted) return;
+      final message = e is InvoiceSaveException
+          ? e.message
+          : 'Could not save the invoice. Check the customer and line items, then try again.';
+      await showSnack(context, message);
+    }
   }
 }
 

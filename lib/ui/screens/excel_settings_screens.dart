@@ -89,7 +89,11 @@ class _ExcelHubScreenState extends State<ExcelHubScreen> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: DropdownButtonFormField<int>(
-                  initialValue: (mapping[field.$1] ?? -1) < 0 ? -1 : mapping[field.$1],
+                  initialValue: () {
+                    final mapped = mapping[field.$1] ?? -1;
+                    if (mapped < 0 || mapped >= preview!.headers.length) return -1;
+                    return mapped;
+                  }(),
                   decoration: InputDecoration(labelText: field.$2),
                   items: [
                     const DropdownMenuItem(value: -1, child: Text('(skip)')),
