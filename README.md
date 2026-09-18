@@ -6,7 +6,7 @@ Every business, customer, invoice, signature, spreadsheet and receipt lives on t
 
 - **App name:** SafeInvoice
 - **Application ID:** `app.safeinvoice`
-- **Version:** 2.2.0 (versionCode 5)
+- **Version:** 2.3.0 (versionCode 6)
 - **Flutter SDK:** 3.47.1 (Dart 3.13.1)
 - **Min SDK:** Flutter default (sideload APK is re-signed v1+v2 for OEM installers)
 - **UI:** Flutter, Material 3
@@ -20,8 +20,8 @@ This Flutter rebuild replaces the previous Kotlin/Compose Android project. Do no
 
 The repository is public. Download the Flutter release artefacts without a GitHub login:
 
-- Sideload APK: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.2.0/SafeInvoice-flutter-release.apk
-- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.2.0/SafeInvoice-flutter-release.aab
+- Sideload APK: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.3.0/SafeInvoice-flutter-release.apk
+- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.3.0/SafeInvoice-flutter-release.aab
 
 `SafeInvoice-flutter-release.apk` is signed with **APK Signature Scheme v1 + v2** so OEM “APK Installer” apps can open it. Verify with `apksigner verify -v` (Verified using v1 scheme / v2 scheme both true).
 

@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
@@ -26,12 +27,13 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "shareFile" -> {
                         val path = call.argument<String>("path") ?: ""
-                        val mime = call.argument<String>("mime") ?: "*/*"
+                        val mime = call.argument<String>("mime") ?: "application/pdf"
                         val title = call.argument<String>("title") ?: "Share"
                         val body = call.argument<String>("body") ?: ""
                         val email = call.argument<String>("email")
                         val target = call.argument<String>("target") ?: "chooser"
-                        shareFile(path, mime, title, body, email, target, result)
+                        val displayName = call.argument<String>("displayName")
+                        shareFile(path, mime, title, body, email, target, displayName, result)
                     }
                     "clipboardImage" -> result.success(clipboardImagePng())
                     else -> result.notImplemented()
@@ -42,6 +44,36 @@ class MainActivity : FlutterActivity() {
     private fun uriFor(file: File): Uri =
         FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
 
+    private fun grantToResolvers(intent: Intent, uri: Uri) {
+        val matches = if (Build.VERSION.SDK_INT >= 33) {
+            packageManager.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.queryIntentActivities(intent, 0)
+        }
+        for (info in matches) {
+            grantUriPermission(
+                info.activityInfo.packageName,
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+    }
+
+    private fun isInstalled(pkg: String): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                packageManager.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(pkg, 0)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun shareFile(
         path: String,
         mime: String,
@@ -49,43 +81,58 @@ class MainActivity : FlutterActivity() {
         body: String,
         email: String?,
         target: String,
+        displayName: String?,
         result: MethodChannel.Result,
     ) {
-        val file = File(path)
-        if (!file.exists()) {
-            result.error("missing", "File not found", path)
+        val source = File(path)
+        if (!source.exists() || source.length() < 100) {
+            result.error("missing", "The invoice PDF file was not found.", path)
             return
         }
-        val uri = uriFor(file)
+        val safeName = (displayName ?: source.name).replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val staged = File(cacheDir, if (safeName.isBlank()) "Invoice.pdf" else safeName)
+        source.copyTo(staged, overwrite = true)
+        val uri = uriFor(staged)
+        val sendMime = if (mime.isBlank()) "application/pdf" else mime
+
         fun intentFor(pkg: String?): Intent {
             return Intent(Intent.ACTION_SEND).apply {
-                type = mime
+                type = sendMime
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_SUBJECT, title)
                 putExtra(Intent.EXTRA_TEXT, body)
+                putExtra(Intent.EXTRA_TITLE, staged.name)
+                clipData = ClipData.newRawUri(staged.name, uri)
                 if (!email.isNullOrBlank()) {
                     putExtra(Intent.EXTRA_EMAIL, arrayOf(email))
                 }
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                if (pkg != null) setPackage(pkg)
+                if (pkg != null) {
+                    setPackage(pkg)
+                    grantUriPermission(pkg, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } else {
+                    grantToResolvers(this, uri)
+                }
             }
         }
+
         try {
             when (target) {
                 "whatsapp" -> {
-                    for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
-                        val intent = intentFor(pkg)
-                        if (intent.resolveActivity(packageManager) != null) {
-                            startActivity(intent)
-                            result.success(true)
-                            return
-                        }
+                    val pkg = listOf("com.whatsapp", "com.whatsapp.w4b").firstOrNull { isInstalled(it) }
+                    if (pkg == null) {
+                        result.error(
+                            "no_whatsapp",
+                            "WhatsApp is not installed on this phone. Install WhatsApp, then share the PDF again.",
+                            null,
+                        )
+                        return
                     }
-                    startActivity(Intent.createChooser(intentFor(null), title))
+                    startActivity(intentFor(pkg))
                     result.success(true)
                 }
                 "email" -> {
-                    val emailIntent = intentFor(null).apply { type = "message/rfc822" }
+                    val emailIntent = intentFor(null)
                     startActivity(Intent.createChooser(emailIntent, title))
                     result.success(true)
                 }
@@ -95,7 +142,13 @@ class MainActivity : FlutterActivity() {
                 }
             }
         } catch (_: ActivityNotFoundException) {
-            result.error("no_app", "No app found to share", target)
+            val code = if (target == "whatsapp") "no_whatsapp" else "no_app"
+            val message = if (target == "whatsapp") {
+                "WhatsApp is not installed on this phone. Install WhatsApp, then share the PDF again."
+            } else {
+                "No app was found to share this invoice."
+            }
+            result.error(code, message, target)
         }
     }
 

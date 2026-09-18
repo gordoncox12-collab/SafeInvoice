@@ -1,4 +1,6 @@
 import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -42,14 +44,22 @@ class InvoicePdfService {
 
     Future<pw.ImageProvider?> load(String? path) async {
       if (path == null || path.isEmpty) return null;
-      final file = storage.resolve(path);
-      if (!file.existsSync()) return null;
-      final bytes = await file.readAsBytes();
-      if (bytes.isEmpty) return null;
-      return pw.MemoryImage(bytes);
+      try {
+        final file = storage.resolve(path);
+        if (!file.existsSync()) {
+          debugPrint('PDF image missing: $path');
+          return null;
+        }
+        final bytes = await file.readAsBytes();
+        if (bytes.length < 32) return null;
+        return pw.MemoryImage(bytes);
+      } catch (e, st) {
+        debugPrint('PDF image skipped ($path): $e\n$st');
+        return null;
+      }
     }
 
-    logo = await load(template?.logoPath ?? business.logoPath);
+    logo = await load(template?.logoPath) ?? await load(business.logoPath);
     headerImg = await load(template?.headerImagePath);
     extraImg = await load(template?.extraImagePath);
     signature = await load(details.invoice.signaturePath);
@@ -61,6 +71,7 @@ class InvoicePdfService {
     final invoice = details.invoice;
     final totals = Money.totals(
       lineTotals: details.items.map((i) => Money.lineTotal(i.quantity, i.unitPrice)).toList(),
+      taxable: details.items.map((i) => i.taxable).toList(),
       discountAmount: invoice.discountAmount,
       discountPercent: invoice.discountPercent,
       vatPercent: invoice.vatPercent,
@@ -76,7 +87,7 @@ class InvoicePdfService {
     doc.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
-        margin: pw.EdgeInsets.fromLTRB(margin, layout == TemplateLayout.letterhead ? 8 : margin, margin, 40),
+        margin: pw.EdgeInsets.fromLTRB(margin, layout == TemplateLayout.letterhead ? 8 : margin, margin, 48),
         header: (context) {
           if (layout == TemplateLayout.letterhead) {
             return pw.Container(
@@ -88,13 +99,21 @@ class InvoicePdfService {
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
-                      pw.Text(
-                        business.name,
-                        style: pw.TextStyle(
-                          color: PdfColors.white,
-                          fontSize: titleSize,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
+                      pw.Row(
+                        children: [
+                          if (logo != null) ...[
+                            pw.Image(logo, height: 36, fit: pw.BoxFit.contain),
+                            pw.SizedBox(width: 10),
+                          ],
+                          pw.Text(
+                            business.name,
+                            style: pw.TextStyle(
+                              color: PdfColors.white,
+                              fontSize: titleSize,
+                              fontWeight: pw.FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
                       pw.Column(
                         crossAxisAlignment: pw.CrossAxisAlignment.end,
@@ -170,7 +189,7 @@ class InvoicePdfService {
             );
           }
 
-          if (logo != null) {
+          if (logo != null && layout != TemplateLayout.letterhead) {
             final logoWidget = pw.Image(logo, height: compact ? 36 : 48);
             widgets.add(
               pw.Align(
@@ -403,16 +422,38 @@ class InvoicePdfService {
             }
           }
 
-          widgets.add(pw.SizedBox(height: 14));
+          widgets.add(pw.SizedBox(height: 16));
           widgets.add(
-            pw.Text('Authorised signature', style: pw.TextStyle(color: primary, fontWeight: pw.FontWeight.bold)),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(10),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.grey400),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Authorised signature',
+                    style: pw.TextStyle(color: primary, fontWeight: pw.FontWeight.bold),
+                  ),
+                  pw.SizedBox(height: 8),
+                  if (signature != null)
+                    pw.Image(signature, width: 260, height: 96, fit: pw.BoxFit.contain)
+                  else if (showSignatureLine)
+                    pw.Container(
+                      width: 220,
+                      height: 48,
+                      alignment: pw.Alignment.bottomCenter,
+                      decoration: const pw.BoxDecoration(
+                        border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey600)),
+                      ),
+                    )
+                  else
+                    pw.SizedBox(height: 24),
+                ],
+              ),
+            ),
           );
-          if (signature != null) {
-            widgets.add(pw.Image(signature, width: 164, height: 54, fit: pw.BoxFit.contain));
-          } else if (showSignatureLine) {
-            widgets.add(pw.SizedBox(height: 28));
-            widgets.add(pw.Container(width: 160, height: 1, color: PdfColors.grey600));
-          }
 
           if (picturePlacement != PicturePlacement.afterItems) {
             if (extraImg != null && picturePlacement == PicturePlacement.footer) {

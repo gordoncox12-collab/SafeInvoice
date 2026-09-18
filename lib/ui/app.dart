@@ -70,6 +70,10 @@ GoRouter createRouter(AppController controller) {
         builder: (context, state) => InvoiceViewScreen(id: state.pathParameters['id']!),
       ),
       GoRoute(
+        path: '/invoice-preview/:id',
+        builder: (context, state) => InvoicePreviewScreen(id: state.pathParameters['id']!),
+      ),
+      GoRoute(
         path: '/signature/:id',
         builder: (context, state) => SignatureScreen(id: state.pathParameters['id']!),
       ),

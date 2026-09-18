@@ -10,6 +10,7 @@ import 'database.dart';
 import 'excel_service.dart';
 import 'local_storage.dart';
 import 'pdf_service.dart';
+import 'share_payload.dart';
 
 /// User-visible failure while saving an invoice. Never crash the UI for these.
 class InvoiceSaveException implements Exception {
@@ -371,7 +372,7 @@ class InvoiceRepository {
     final rel = storage.relativeToRoot(file);
     await db.update(
       'invoices',
-      {'signaturePath': rel, 'updatedAt': Za.nowMillis()},
+      {'signaturePath': rel, 'pdfPath': null, 'updatedAt': Za.nowMillis()},
       where: 'id = ?',
       whereArgs: [invoice.id],
     );
@@ -411,7 +412,7 @@ class InvoiceRepository {
     }
     template ??= await defaultTemplate(business.id);
     final dir = storage.folder(business.id, customer.id, FolderType.invoices);
-    final dest = File(p.join(dir.path, '${details.invoice.number}.pdf'));
+    final dest = File(p.join(dir.path, invoicePdfFileName(details.invoice.number)));
     await pdf.generate(
       details: details,
       business: business,
@@ -614,9 +615,22 @@ class InvoiceRepository {
 
   Future<String> saveTemplateBytes(String businessId, Uint8List bytes, String name, {bool logo = false}) async {
     final dir = logo ? storage.logosDir(businessId) : storage.templatesDir(businessId);
-    final dest = storage.uniqueFile(dir, name);
+    final dest = storage.uniqueFile(dir, name.isEmpty ? (logo ? 'logo.png' : 'image.png') : name);
     await storage.copyBytes(bytes, dest);
     return storage.relativeToRoot(dest);
+  }
+
+  Future<Business> saveBusinessLogo(Business business, Uint8List bytes, String displayName) async {
+    final rel = await saveTemplateBytes(business.id, bytes, displayName, logo: true);
+    final saved = business.copyWith(logoPath: rel, updatedAt: Za.nowMillis());
+    await saveBusiness(saved);
+    return saved;
+  }
+
+  Future<Business> clearBusinessLogo(Business business) async {
+    final saved = business.copyWith(clearLogo: true, updatedAt: Za.nowMillis());
+    await saveBusiness(saved);
+    return saved;
   }
 
   Future<File> exportBusinessWorkbook(String businessId, File dest, {bool csv = false}) async {

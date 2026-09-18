@@ -453,6 +453,17 @@ class _TemplateEditScreenState extends State<TemplateEditScreen> {
             onChanged: (v) => template = t.copyWith(footerText: v),
           ),
           const SizedBox(height: 12),
+          if (t.logoPath != null)
+            Builder(
+              builder: (context) {
+                final file = context.read<AppController>().repo.storage.resolve(t.logoPath!);
+                if (!file.existsSync()) return const Text('Template logo file is missing.');
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: DiskImage(file, height: 56),
+                );
+              },
+            ),
           Wrap(
             spacing: 8,
             children: [
@@ -516,6 +527,7 @@ class _TemplateEditScreenState extends State<TemplateEditScreen> {
         template = template!.copyWith(extraImagePath: path);
       }
     });
+    await app.saveTemplate(template!);
   }
 
   Future<void> _paste() async {
