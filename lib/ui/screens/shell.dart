@@ -90,8 +90,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         padding: const EdgeInsets.all(20),
         children: [
           Text(
-            'SafeInvoice keeps every invoice, receipt and spreadsheet on this device. No demo data — add your real business to begin.',
+            'SafeInvoice keeps every invoice, receipt and spreadsheet on this device. No demo data.',
             style: Theme.of(context).textTheme.bodyLarge,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Tester path after this screen: add products → add a customer → create an invoice (pick catalog items from the dropdown).',
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
           TextField(controller: _name, decoration: const InputDecoration(labelText: 'Business name *')),
@@ -177,6 +182,8 @@ class HomeScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Text('Offline books for ${biz?.name ?? 'your business'}', style: Theme.of(context).textTheme.titleMedium),
           ),
+          if (app.products.isEmpty || app.customers.isEmpty || app.invoices.isEmpty)
+            _GettingStartedCard(app: app),
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -210,6 +217,11 @@ class HomeScreen extends StatelessWidget {
                   label: const Text('New invoice'),
                 ),
                 OutlinedButton.icon(
+                  onPressed: () => context.push('/product/new'),
+                  icon: const Icon(Icons.inventory_2_outlined),
+                  label: const Text('New product'),
+                ),
+                OutlinedButton.icon(
                   onPressed: () => context.push('/customer-edit/new'),
                   icon: const Icon(Icons.person_add_alt),
                   label: const Text('New customer'),
@@ -226,7 +238,11 @@ class HomeScreen extends StatelessWidget {
             title: 'Recent invoices',
             trailing: TextButton(onPressed: () => context.go('/invoices'), child: const Text('See all')),
             child: app.invoices.isEmpty
-                ? const Text('No invoices yet. Create one to generate a PDF with 15% VAT.')
+                ? Text(
+                    app.customers.isEmpty
+                        ? 'Add a customer, then create an invoice from the catalog.'
+                        : 'No invoices yet. Pick a customer and add line items from Products.',
+                  )
                 : Column(
                     children: [
                       for (final inv in app.invoices.take(6))
@@ -246,6 +262,80 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _GettingStartedCard extends StatelessWidget {
+  const _GettingStartedCard({required this.app});
+
+  final AppController app;
+
+  @override
+  Widget build(BuildContext context) {
+    return SectionCard(
+      title: 'Get ready to invoice',
+      child: Column(
+        children: [
+          _StepTile(
+            done: true,
+            title: '1. Business profile',
+            subtitle: app.business?.name ?? 'Created',
+            onTap: () => context.push('/business/${app.business?.id ?? 'new'}'),
+          ),
+          _StepTile(
+            done: app.products.isNotEmpty,
+            title: '2. Add products',
+            subtitle: app.products.isEmpty
+                ? 'Name, unit price, optional VAT — then pick them on invoice lines'
+                : '${app.products.length} in catalog',
+            onTap: () => context.push(app.products.isEmpty ? '/product/new' : '/products'),
+          ),
+          _StepTile(
+            done: app.customers.isNotEmpty,
+            title: '3. Add a customer',
+            subtitle: app.customers.isEmpty
+                ? 'Needed before you can save an invoice'
+                : '${app.customers.length} on this book',
+            onTap: () => context.push(app.customers.isEmpty ? '/customer-edit/new' : '/customers'),
+          ),
+          _StepTile(
+            done: app.invoices.isNotEmpty,
+            title: '4. Create an invoice',
+            subtitle: 'Dropdowns for customer and products, then PDF + signature',
+            onTap: () => context.push('/invoice/new'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepTile extends StatelessWidget {
+  const _StepTile({
+    required this.done,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final bool done;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        done ? Icons.check_circle : Icons.radio_button_unchecked,
+        color: done ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outline,
+      ),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: onTap,
     );
   }
 }
@@ -294,16 +384,16 @@ class MoreScreen extends StatelessWidget {
           ),
           if (app.businesses.length > 1)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: DropdownButtonFormField<String>(
-                initialValue: app.business?.id,
-                decoration: const InputDecoration(labelText: 'Active book'),
-                items: [
-                  for (final b in app.businesses)
-                    DropdownMenuItem(value: b.id, child: Text(b.name)),
-                ],
-                onChanged: (id) {
-                  if (id != null) app.setActiveBusiness(id);
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: SearchableSelect<Business>(
+                label: 'Active book',
+                value: app.business,
+                items: app.businesses,
+                searchHint: 'Search businesses',
+                labelOf: (b) => b.name,
+                subtitleOf: (b) => b.vatNumber ?? b.email,
+                onChanged: (b) {
+                  if (b != null) app.setActiveBusiness(b.id);
                 },
               ),
             ),
@@ -313,6 +403,16 @@ class MoreScreen extends StatelessWidget {
             onTap: () => context.push('/business/new'),
           ),
           const Divider(),
+          ListTile(
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: const Text('Products catalog'),
+            subtitle: Text(
+              app.products.isEmpty
+                  ? 'Name, price and VAT flag for invoice dropdowns'
+                  : '${app.products.length} items',
+            ),
+            onTap: () => context.push('/products'),
+          ),
           ListTile(
             leading: const Icon(Icons.table_chart_outlined),
             title: const Text('Excel import / export'),

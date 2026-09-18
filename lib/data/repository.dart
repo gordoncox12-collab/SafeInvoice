@@ -130,6 +130,34 @@ class InvoiceRepository {
     if (dir.existsSync()) dir.deleteSync(recursive: true);
   }
 
+  Future<List<Product>> products(String businessId) async {
+    final rows = await db.query(
+      'products',
+      where: 'businessId = ?',
+      whereArgs: [businessId],
+      orderBy: 'name COLLATE NOCASE',
+    );
+    return rows.map(Product.fromMap).toList();
+  }
+
+  Future<Product?> getProduct(String id) async {
+    final rows = await db.query('products', where: 'id = ?', whereArgs: [id]);
+    if (rows.isEmpty) return null;
+    return Product.fromMap(rows.first);
+  }
+
+  Future<void> saveProduct(Product entity) async {
+    await db.insert(
+      'products',
+      entity.copyWith(updatedAt: Za.nowMillis()).toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteProduct(Product entity) async {
+    await db.delete('products', where: 'id = ?', whereArgs: [entity.id]);
+  }
+
   Future<List<Invoice>> invoices(String businessId) async {
     final rows = await db.query(
       'invoices',
@@ -192,6 +220,7 @@ class InvoiceRepository {
   }) async {
     final totals = Money.totals(
       lineTotals: items.map((i) => Money.lineTotal(i.quantity, i.unitPrice)).toList(),
+      taxable: items.map((i) => i.taxable).toList(),
       discountAmount: invoice.discountAmount,
       discountPercent: invoice.discountPercent,
       vatPercent: invoice.vatPercent,
@@ -534,6 +563,17 @@ class InvoiceRepository {
           c.notes ?? '',
         ],
     ];
+    final productList = await products(businessId);
+    const productHeaders = ['Name', 'Description', 'Unit price', 'VAT'];
+    final productRows = [
+      for (final p in productList)
+        [
+          p.name,
+          p.description ?? '',
+          p.unitPrice.toString(),
+          p.taxable ? 'Yes' : 'No',
+        ],
+    ];
     const invoiceHeaders = [
       'Number',
       'Customer',
@@ -567,6 +607,7 @@ class InvoiceRepository {
     return excel.writeWorkbook(dest, {
       'Invoices': (invoiceHeaders, invoiceRows),
       'Customers': (customerHeaders, customerRows),
+      'Products': (productHeaders, productRows),
       'Business': (
         ['Field', 'Value'],
         [

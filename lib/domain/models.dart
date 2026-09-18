@@ -15,6 +15,16 @@ enum AccentPalette {
   slate,
   indigo,
   teal,
+  coral,
+  magenta,
+  violet,
+  azure,
+  tangerine,
+  fuchsia,
+  sunshine,
+  electric,
+  crimson,
+  mint,
 }
 
 enum TemplateLayout { classic, modern, compact, letterhead, minimal }
@@ -309,6 +319,70 @@ class Customer {
       );
 }
 
+class Product {
+  const Product({
+    required this.id,
+    required this.businessId,
+    required this.name,
+    this.description,
+    this.unitPrice = 0,
+    this.taxable = true,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String businessId;
+  final String name;
+  final String? description;
+  final double unitPrice;
+  final bool taxable;
+  final int createdAt;
+  final int updatedAt;
+
+  Product copyWith({
+    String? name,
+    String? description,
+    double? unitPrice,
+    bool? taxable,
+    int? updatedAt,
+    bool clearDescription = false,
+  }) {
+    return Product(
+      id: id,
+      businessId: businessId,
+      name: name ?? this.name,
+      description: clearDescription ? null : (description ?? this.description),
+      unitPrice: unitPrice ?? this.unitPrice,
+      taxable: taxable ?? this.taxable,
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'businessId': businessId,
+        'name': name,
+        'description': description,
+        'unitPrice': unitPrice,
+        'taxable': taxable ? 1 : 0,
+        'createdAt': createdAt,
+        'updatedAt': updatedAt,
+      };
+
+  factory Product.fromMap(Map<String, Object?> m) => Product(
+        id: m['id']! as String,
+        businessId: m['businessId']! as String,
+        name: m['name']! as String,
+        description: m['description'] as String?,
+        unitPrice: (m['unitPrice'] as num?)?.toDouble() ?? 0,
+        taxable: (m['taxable'] as int? ?? 1) == 1,
+        createdAt: m['createdAt']! as int,
+        updatedAt: m['updatedAt']! as int,
+      );
+}
+
 class InvoiceLineItem {
   const InvoiceLineItem({
     required this.id,
@@ -318,6 +392,7 @@ class InvoiceLineItem {
     this.quantity = 1,
     this.unitPrice = 0,
     this.taxable = true,
+    this.productId,
   });
 
   final String id;
@@ -327,6 +402,7 @@ class InvoiceLineItem {
   final double quantity;
   final double unitPrice;
   final bool taxable;
+  final String? productId;
 
   InvoiceLineItem copyWith({
     int? position,
@@ -334,6 +410,8 @@ class InvoiceLineItem {
     double? quantity,
     double? unitPrice,
     bool? taxable,
+    String? productId,
+    bool clearProduct = false,
   }) {
     return InvoiceLineItem(
       id: id,
@@ -343,6 +421,7 @@ class InvoiceLineItem {
       quantity: quantity ?? this.quantity,
       unitPrice: unitPrice ?? this.unitPrice,
       taxable: taxable ?? this.taxable,
+      productId: clearProduct ? null : (productId ?? this.productId),
     );
   }
 
@@ -354,6 +433,7 @@ class InvoiceLineItem {
         'quantity': quantity,
         'unitPrice': unitPrice,
         'taxable': taxable ? 1 : 0,
+        'productId': productId,
       };
 
   factory InvoiceLineItem.fromMap(Map<String, Object?> m) => InvoiceLineItem(
@@ -364,6 +444,7 @@ class InvoiceLineItem {
         quantity: (m['quantity'] as num?)?.toDouble() ?? 1,
         unitPrice: (m['unitPrice'] as num?)?.toDouble() ?? 0,
         taxable: (m['taxable'] as int? ?? 1) == 1,
+        productId: m['productId'] as String?,
       );
 }
 

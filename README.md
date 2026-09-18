@@ -6,7 +6,7 @@ Every business, customer, invoice, signature, spreadsheet and receipt lives on t
 
 - **App name:** SafeInvoice
 - **Application ID:** `app.safeinvoice`
-- **Version:** 2.0.0 (versionCode 2)
+- **Version:** 2.1.0 (versionCode 3)
 - **Flutter SDK:** 3.47.1 (Dart 3.13.1)
 - **Min SDK:** 26 (Android 8.0)
 - **UI:** Flutter, Material 3
@@ -20,14 +20,23 @@ This Flutter rebuild replaces the previous Kotlin/Compose Android project. Do no
 
 The repository is public. Download the Flutter release artefacts without a GitHub login:
 
-- Sideload APK: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.0.0/SafeInvoice-flutter-release.apk
-- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.0.0/SafeInvoice-flutter-release.aab
+- Sideload APK: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.1.0/SafeInvoice-flutter-release.apk
+- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.1.0/SafeInvoice-flutter-release.aab
 
 ## First launch (no seed data)
 
-The first screen asks you to **create your business profile**. After that, add customers and invoices. Books start empty — there are no Cape Town sample businesses, fake customers or sample invoices.
+The first screen asks you to **create your business profile**. Home then shows a four-step path: **products → customer → invoice**. Books start empty — there are no Cape Town sample businesses, fake customers or sample invoices.
 
 A default “Standard” invoice template (ZAR, 15% VAT, classic layout) is created with the business so you can invoice immediately.
+
+### How to test (pre-launch)
+
+1. Install the v2.1.0 APK.
+2. Create a business (name is enough).
+3. **More → Products catalog** (or Home step 2): add a product with name, unit price, VAT on/off.
+4. **Customers**: add a customer.
+5. **New invoice**: pick the customer from the searchable dropdown, pick the product on the line item, save, generate PDF, add a signature.
+6. **Settings**: switch Light/Dark/System and tap Coral, Magenta, Sunshine, etc. — the live preview updates immediately.
 
 ## Open, build and run
 
@@ -86,15 +95,16 @@ Treat these as the **first upload key**. Generate a replacement with `scripts/ma
 ## What you can do offline
 
 1. **Business profiles** and **customers** (multiple books).
-2. **Per-customer folders** on disk: invoices, receipts, Excel, images, notes — under app support files `businesses/{businessId}/customers/{customerId}/…`.
-3. **sqflite** stores every invoice, line item, payment, note and file index.
-4. **Invoices:** line items, 15% VAT default, discounts, ZAR default, `PREFIX-YEAR-0001` numbering, draft / sent / paid / overdue.
-5. **Handwritten signature** stamped onto the PDF.
-6. Complete **local partition** per business and customer.
-7. **Excel / CSV** import with column mapping, export, and in-app sheet capture into the customer folder (`.xlsx` / `.xls` / `.csv`).
-8. **Share PDF and receipts** via Email and WhatsApp (Android `ACTION_SEND` + `FileProvider` attachment).
-9. **Theme:** light / dark / system plus eight accent palettes (Settings).
-10. **Invoice templates:** classic / modern / compact / letterhead / minimal, plus margins, logo position, picture placement, colours, logo, header/extra pictures, clipboard paste.
+2. **Products catalog** (name, unit price, optional VAT flag and description) with searchable dropdowns on invoice lines.
+3. **Per-customer folders** on disk: invoices, receipts, Excel, images, notes — under app support files `businesses/{businessId}/customers/{customerId}/…`.
+4. **sqflite** stores every invoice, line item, product, payment, note and file index.
+5. **Invoices:** searchable customer/invoice/product selects, line items, 15% VAT default (per-line VAT flag), discounts, ZAR default, `PREFIX-YEAR-0001` numbering, draft / sent / paid / overdue.
+6. **Handwritten signature** stamped onto the PDF.
+7. Complete **local partition** per business and customer.
+8. **Excel / CSV** import with column mapping, export (including a Products sheet), and in-app sheet capture into the customer folder (`.xlsx` / `.xls` / `.csv`).
+9. **Share PDF and receipts** via Email and WhatsApp (Android `ACTION_SEND` + `FileProvider` attachment).
+10. **Theme:** light / dark / system plus 18 vibrant accent palettes with a live preview in Settings.
+11. **Invoice templates:** classic / modern / compact / letterhead / minimal, plus margins, logo position, picture placement, colours, logo, header/extra pictures, clipboard paste.
 
 ## Privacy
 

@@ -68,6 +68,7 @@ class Money {
 
   static MoneyTotals totals({
     required List<double> lineTotals,
+    List<bool>? taxable,
     double discountAmount = 0,
     double discountPercent = 0,
     double vatPercent = 15,
@@ -75,7 +76,16 @@ class Money {
     final subtotal = round(lineTotals.fold<double>(0, (a, b) => a + b));
     final discount = round(discountAmount + subtotal * discountPercent / 100.0);
     final net = round((subtotal - discount).clamp(0, double.infinity));
-    final vat = round(net * vatPercent / 100.0);
+    var taxableSubtotal = subtotal;
+    if (taxable != null && taxable.length == lineTotals.length) {
+      taxableSubtotal = 0;
+      for (var i = 0; i < lineTotals.length; i++) {
+        if (taxable[i]) taxableSubtotal += lineTotals[i];
+      }
+      taxableSubtotal = round(taxableSubtotal);
+    }
+    final taxableNet = subtotal == 0 ? 0.0 : round(net * (taxableSubtotal / subtotal));
+    final vat = round(taxableNet * vatPercent / 100.0);
     final total = round(net + vat);
     return MoneyTotals(
       subtotal: subtotal,

@@ -160,6 +160,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppController>();
+    final current = paletteOf(app.settings.accentPalette);
     return Scaffold(
       appBar: AppBar(title: const Text('Theme settings')),
       body: ListView(
@@ -176,6 +177,15 @@ class SettingsScreen extends StatelessWidget {
             selected: {app.settings.themeMode},
             onSelectionChanged: (s) => app.setTheme(s.first),
           ),
+          const SizedBox(height: 20),
+          Text('Live preview', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            '${current.name} · ${niceEnum(app.settings.themeMode)} — tap a palette to see it immediately.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          const ThemeLivePreview(),
           const SizedBox(height: 24),
           Text('Accent palettes', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -184,20 +194,98 @@ class SettingsScreen extends StatelessWidget {
             runSpacing: 10,
             children: [
               for (final palette in palettes)
-                ChoiceChip(
-                  label: Text(palette.name),
+                _PaletteSwatch(
+                  palette: palette,
                   selected: app.settings.accentPalette == palette.key,
-                  avatar: CircleAvatar(backgroundColor: palette.primary),
-                  onSelected: (_) => app.setAccent(palette.key),
+                  onTap: () => app.setAccent(palette.key),
                 ),
             ],
           ),
           const SizedBox(height: 24),
           Text(
-            'Palettes tint invoices, navigation and forms. The chosen template still controls PDF colours separately.',
+            'Palettes tint the app, navigation and forms. Invoice PDF colours still come from the chosen template.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _PaletteSwatch extends StatelessWidget {
+  const _PaletteSwatch({
+    required this.palette,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Palette palette;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 104,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected ? palette.primary : Theme.of(context).colorScheme.outlineVariant,
+              width: selected ? 3 : 1,
+            ),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [palette.primary, palette.secondary, palette.tertiary],
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                palette.name,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _Dot(palette.primary),
+                  const SizedBox(width: 4),
+                  _Dot(palette.secondary),
+                  const SizedBox(width: 4),
+                  _Dot(palette.tertiary),
+                  const Spacer(),
+                  if (selected) const Icon(Icons.check_circle, color: Colors.white, size: 18),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Dot extends StatelessWidget {
+  const _Dot(this.color);
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 12,
+      height: 12,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white70),
       ),
     );
   }
@@ -487,6 +575,7 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
   final reference = TextEditingController();
   final notes = TextEditingController();
   String? customerId;
+  String? invoiceId;
 
   @override
   void dispose() {
@@ -514,14 +603,41 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
             onChanged: (v) => setState(() => type = v ?? type),
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String?>(
-            initialValue: customerId,
-            decoration: const InputDecoration(labelText: 'Customer'),
+          SearchableSelect<Customer>(
+            label: 'Customer',
+            value: app.customers.where((c) => c.id == customerId).firstOrNull,
+            items: app.customers,
+            includeNone: true,
+            noneLabel: '(none)',
+            searchHint: 'Search customers',
+            labelOf: (c) => c.name,
+            subtitleOf: (c) => [c.email, c.phone].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+            onChanged: (c) => setState(() {
+              customerId = c?.id;
+              if (invoiceId != null &&
+                  app.invoices.where((i) => i.id == invoiceId && i.customerId == customerId).isEmpty) {
+                invoiceId = null;
+              }
+            }),
+          ),
+          const SizedBox(height: 12),
+          SearchableSelect<Invoice>(
+            label: 'Invoice',
+            value: app.invoices.where((i) => i.id == invoiceId).firstOrNull,
             items: [
-              const DropdownMenuItem(value: null, child: Text('(none)')),
-              for (final c in app.customers) DropdownMenuItem(value: c.id, child: Text(c.name)),
+              for (final inv in app.invoices)
+                if (customerId == null || inv.customerId == customerId) inv,
             ],
-            onChanged: (v) => setState(() => customerId = v),
+            includeNone: true,
+            noneLabel: '(none)',
+            searchHint: 'Search invoices',
+            labelOf: (inv) => inv.number,
+            subtitleOf: (inv) =>
+                '${Za.money(inv.total, inv.currency)} · ${niceEnum(inv.status)}',
+            onChanged: (inv) => setState(() {
+              invoiceId = inv?.id;
+              if (inv != null) customerId = inv.customerId;
+            }),
           ),
           const SizedBox(height: 12),
           TextField(controller: amount, decoration: const InputDecoration(labelText: 'Amount'), keyboardType: TextInputType.number),
@@ -542,6 +658,7 @@ class _TransactionEditScreenState extends State<TransactionEditScreen> {
                   id: Za.newId(),
                   businessId: biz.id,
                   customerId: customerId,
+                  invoiceId: invoiceId,
                   type: type,
                   amount: double.tryParse(amount.text) ?? 0,
                   occurredAt: Za.nowMillis(),

@@ -22,23 +22,42 @@ class CustomerListScreen extends StatelessWidget {
         label: const Text('Customer'),
       ),
       body: app.customers.isEmpty
-          ? const EmptyHint(
+          ? EmptyHint(
               icon: Icons.people_outline,
               title: 'No customers',
               body: 'Add a customer to create their invoices, receipts, Excel, images and notes folders.',
+              actionLabel: 'Add customer',
+              onAction: () => context.push('/customer-edit/new'),
             )
-          : ListView.builder(
-              itemCount: app.customers.length,
-              itemBuilder: (context, i) {
-                final c = app.customers[i];
-                final count = app.invoices.where((inv) => inv.customerId == c.id).length;
-                return ListTile(
-                  title: Text(c.name),
-                  subtitle: Text([c.email, c.phone].whereType<String>().where((s) => s.isNotEmpty).join(' · ')),
-                  trailing: Text('$count inv'),
-                  onTap: () => context.push('/customer/${c.id}'),
-                );
-              },
+          : ListView(
+              padding: const EdgeInsets.only(bottom: 88),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: SearchableSelect<Customer>(
+                    label: 'Find customer',
+                    value: null,
+                    items: app.customers,
+                    placeholder: 'Tap to search and open',
+                    searchHint: 'Search name, email or phone',
+                    labelOf: (c) => c.name,
+                    subtitleOf: (c) =>
+                        [c.email, c.phone].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+                    onChanged: (c) {
+                      if (c != null) context.push('/customer/${c.id}');
+                    },
+                  ),
+                ),
+                for (final c in app.customers)
+                  ListTile(
+                    title: Text(c.name),
+                    subtitle: Text(
+                      [c.email, c.phone].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+                    ),
+                    trailing: Text('${app.invoices.where((inv) => inv.customerId == c.id).length} inv'),
+                    onTap: () => context.push('/customer/${c.id}'),
+                  ),
+              ],
             ),
     );
   }
@@ -201,7 +220,7 @@ class CustomerDetailScreen extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: FilledButton.icon(
-              onPressed: () => context.push('/invoice/new'),
+              onPressed: () => context.push('/invoice/new?customer=${customer.id}'),
               icon: const Icon(Icons.add),
               label: const Text('Invoice this customer'),
             ),

@@ -9,12 +9,23 @@ class AppDatabase {
   static Future<AppDatabase> open(String dbPath) async {
     final database = await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
       onCreate: (db, version) async {
-        await db.execute('''
+        await _createV1(db);
+        await _upgradeToV2(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) await _upgradeToV2(db);
+      },
+    );
+    return AppDatabase._(database);
+  }
+
+  static Future<void> _createV1(Database db) async {
+    await db.execute('''
 CREATE TABLE businesses (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -42,7 +53,7 @@ CREATE TABLE businesses (
   updatedAt INTEGER NOT NULL,
   isActive INTEGER NOT NULL
 )''');
-        await db.execute('''
+    await db.execute('''
 CREATE TABLE customers (
   id TEXT PRIMARY KEY,
   businessId TEXT NOT NULL,
@@ -60,8 +71,8 @@ CREATE TABLE customers (
   updatedAt INTEGER NOT NULL,
   FOREIGN KEY (businessId) REFERENCES businesses(id) ON DELETE CASCADE
 )''');
-        await db.execute('CREATE INDEX idx_customers_biz ON customers(businessId)');
-        await db.execute('''
+    await db.execute('CREATE INDEX idx_customers_biz ON customers(businessId)');
+    await db.execute('''
 CREATE TABLE invoices (
   id TEXT PRIMARY KEY,
   businessId TEXT NOT NULL,
@@ -87,9 +98,9 @@ CREATE TABLE invoices (
   FOREIGN KEY (businessId) REFERENCES businesses(id) ON DELETE CASCADE,
   FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE CASCADE
 )''');
-        await db.execute('CREATE INDEX idx_invoices_biz ON invoices(businessId)');
-        await db.execute('CREATE INDEX idx_invoices_cust ON invoices(customerId)');
-        await db.execute('''
+    await db.execute('CREATE INDEX idx_invoices_biz ON invoices(businessId)');
+    await db.execute('CREATE INDEX idx_invoices_cust ON invoices(customerId)');
+    await db.execute('''
 CREATE TABLE invoice_line_items (
   id TEXT PRIMARY KEY,
   invoiceId TEXT NOT NULL,
@@ -100,8 +111,8 @@ CREATE TABLE invoice_line_items (
   taxable INTEGER NOT NULL,
   FOREIGN KEY (invoiceId) REFERENCES invoices(id) ON DELETE CASCADE
 )''');
-        await db.execute('CREATE INDEX idx_items_inv ON invoice_line_items(invoiceId)');
-        await db.execute('''
+    await db.execute('CREATE INDEX idx_items_inv ON invoice_line_items(invoiceId)');
+    await db.execute('''
 CREATE TABLE invoice_images (
   id TEXT PRIMARY KEY,
   invoiceId TEXT NOT NULL,
@@ -109,7 +120,7 @@ CREATE TABLE invoice_images (
   sortOrder INTEGER NOT NULL,
   FOREIGN KEY (invoiceId) REFERENCES invoices(id) ON DELETE CASCADE
 )''');
-        await db.execute('''
+    await db.execute('''
 CREATE TABLE transactions (
   id TEXT PRIMARY KEY,
   businessId TEXT NOT NULL,
@@ -126,7 +137,7 @@ CREATE TABLE transactions (
   createdAt INTEGER NOT NULL,
   FOREIGN KEY (businessId) REFERENCES businesses(id) ON DELETE CASCADE
 )''');
-        await db.execute('''
+    await db.execute('''
 CREATE TABLE notes (
   id TEXT PRIMARY KEY,
   businessId TEXT NOT NULL,
@@ -137,7 +148,7 @@ CREATE TABLE notes (
   updatedAt INTEGER NOT NULL,
   FOREIGN KEY (customerId) REFERENCES customers(id) ON DELETE CASCADE
 )''');
-        await db.execute('''
+    await db.execute('''
 CREATE TABLE folder_files (
   id TEXT PRIMARY KEY,
   businessId TEXT NOT NULL,
@@ -149,7 +160,7 @@ CREATE TABLE folder_files (
   sizeBytes INTEGER NOT NULL,
   createdAt INTEGER NOT NULL
 )''');
-        await db.execute('''
+    await db.execute('''
 CREATE TABLE invoice_templates (
   id TEXT PRIMARY KEY,
   businessId TEXT NOT NULL,
@@ -172,22 +183,40 @@ CREATE TABLE invoice_templates (
   updatedAt INTEGER NOT NULL,
   FOREIGN KEY (businessId) REFERENCES businesses(id) ON DELETE CASCADE
 )''');
-        await db.execute('''
+    await db.execute('''
 CREATE TABLE app_settings (
   id INTEGER PRIMARY KEY,
   themeMode TEXT NOT NULL,
   accentPalette TEXT NOT NULL,
   activeBusinessId TEXT
 )''');
-        await db.insert('app_settings', {
-          'id': 1,
-          'themeMode': 'SYSTEM',
-          'accentPalette': 'FOREST',
-          'activeBusinessId': null,
-        });
-      },
-    );
-    return AppDatabase._(database);
+    await db.insert('app_settings', {
+      'id': 1,
+      'themeMode': 'SYSTEM',
+      'accentPalette': 'FOREST',
+      'activeBusinessId': null,
+    });
+  }
+
+  static Future<void> _upgradeToV2(Database db) async {
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS products (
+  id TEXT PRIMARY KEY,
+  businessId TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  unitPrice REAL NOT NULL,
+  taxable INTEGER NOT NULL,
+  createdAt INTEGER NOT NULL,
+  updatedAt INTEGER NOT NULL,
+  FOREIGN KEY (businessId) REFERENCES businesses(id) ON DELETE CASCADE
+)''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_products_biz ON products(businessId)');
+    final info = await db.rawQuery('PRAGMA table_info(invoice_line_items)');
+    final hasProductId = info.any((row) => row['name'] == 'productId');
+    if (!hasProductId) {
+      await db.execute('ALTER TABLE invoice_line_items ADD COLUMN productId TEXT');
+    }
   }
 
   static String defaultPath(String supportDir) => p.join(supportDir, 'safeinvoice.db');
