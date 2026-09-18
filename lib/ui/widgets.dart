@@ -39,11 +39,20 @@ class StatusChip extends StatelessWidget {
 }
 
 class EmptyHint extends StatelessWidget {
-  const EmptyHint({super.key, required this.icon, required this.title, required this.body});
+  const EmptyHint({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.body,
+    this.actionLabel,
+    this.onAction,
+  });
 
   final IconData icon;
   final String title;
   final String body;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +67,190 @@ class EmptyHint extends StatelessWidget {
             Text(title, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(body, textAlign: TextAlign.center),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 16),
+              FilledButton(onPressed: onAction, child: Text(actionLabel!)),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class SearchableSelect<T> extends StatelessWidget {
+  const SearchableSelect({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.labelOf,
+    required this.onChanged,
+    this.subtitleOf,
+    this.searchHint = 'Search',
+    this.includeNone = false,
+    this.noneLabel = '(none)',
+    this.placeholder,
+    this.enabled = true,
+  });
+
+  final String label;
+  final T? value;
+  final List<T> items;
+  final String Function(T) labelOf;
+  final String Function(T)? subtitleOf;
+  final ValueChanged<T?> onChanged;
+  final String searchHint;
+  final bool includeNone;
+  final String noneLabel;
+  final String? placeholder;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedLabel = value == null
+        ? (includeNone ? noneLabel : (placeholder ?? 'Select ${label.toLowerCase()}'))
+        : labelOf(value as T);
+    final selectedSub = value == null || subtitleOf == null ? null : subtitleOf!(value as T);
+    return InkWell(
+      onTap: enabled ? () => _open(context) : null,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          suffixIcon: const Icon(Icons.arrow_drop_down),
+          enabled: enabled,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              selectedLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            if (selectedSub != null && selectedSub.isNotEmpty)
+              Text(
+                selectedSub,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _open(BuildContext context) async {
+    final result = await showModalBottomSheet<_SelectResult<T>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _SearchSheet<T>(
+        title: label,
+        items: items,
+        labelOf: labelOf,
+        subtitleOf: subtitleOf,
+        searchHint: searchHint,
+        includeNone: includeNone,
+        noneLabel: noneLabel,
+        selected: value,
+      ),
+    );
+    if (result != null) onChanged(result.value);
+  }
+}
+
+class _SelectResult<T> {
+  const _SelectResult(this.value);
+  final T? value;
+}
+
+class _SearchSheet<T> extends StatefulWidget {
+  const _SearchSheet({
+    required this.title,
+    required this.items,
+    required this.labelOf,
+    required this.subtitleOf,
+    required this.searchHint,
+    required this.includeNone,
+    required this.noneLabel,
+    required this.selected,
+  });
+
+  final String title;
+  final List<T> items;
+  final String Function(T) labelOf;
+  final String Function(T)? subtitleOf;
+  final String searchHint;
+  final bool includeNone;
+  final String noneLabel;
+  final T? selected;
+
+  @override
+  State<_SearchSheet<T>> createState() => _SearchSheetState<T>();
+}
+
+class _SearchSheetState<T> extends State<_SearchSheet<T>> {
+  String query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final q = query.trim().toLowerCase();
+    final filtered = widget.items.where((item) {
+      if (q.isEmpty) return true;
+      final label = widget.labelOf(item).toLowerCase();
+      final sub = widget.subtitleOf?.call(item).toLowerCase() ?? '';
+      return label.contains(q) || sub.contains(q);
+    }).toList();
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * 0.7,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(widget.title, style: Theme.of(context).textTheme.titleMedium),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  autofocus: widget.items.length > 6,
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search),
+                    hintText: widget.searchHint,
+                  ),
+                  onChanged: (v) => setState(() => query = v),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: ListView(
+                  children: [
+                    if (widget.includeNone)
+                      ListTile(
+                        title: Text(widget.noneLabel),
+                        selected: widget.selected == null,
+                        onTap: () => Navigator.pop(context, _SelectResult<T>(null)),
+                      ),
+                    if (filtered.isEmpty)
+                      const ListTile(title: Text('No matches'))
+                    else
+                      for (final item in filtered)
+                        ListTile(
+                          title: Text(widget.labelOf(item)),
+                          subtitle: widget.subtitleOf == null ? null : Text(widget.subtitleOf!(item)),
+                          selected: widget.selected == item,
+                          onTap: () => Navigator.pop(context, _SelectResult<T>(item)),
+                        ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

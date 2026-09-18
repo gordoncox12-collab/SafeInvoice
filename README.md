@@ -6,9 +6,9 @@ Every business, customer, invoice, signature, spreadsheet and receipt lives on t
 
 - **App name:** SafeInvoice
 - **Application ID:** `app.safeinvoice`
-- **Version:** 2.0.0 (versionCode 2)
+- **Version:** 2.2.0 (versionCode 5)
 - **Flutter SDK:** 3.47.1 (Dart 3.13.1)
-- **Min SDK:** 26 (Android 8.0)
+- **Min SDK:** Flutter default (sideload APK is re-signed v1+v2 for OEM installers)
 - **UI:** Flutter, Material 3
 - **Database:** sqflite (source of truth)
 - **PDF:** on-device `pdf` package
@@ -20,12 +20,16 @@ This Flutter rebuild replaces the previous Kotlin/Compose Android project. Do no
 
 The repository is public. Download the Flutter release artefacts without a GitHub login:
 
-- Sideload APK: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.0.0/SafeInvoice-flutter-release.apk
-- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.0.0/SafeInvoice-flutter-release.aab
+- Sideload APK: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.2.0/SafeInvoice-flutter-release.apk
+- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.2.0/SafeInvoice-flutter-release.aab
+
+`SafeInvoice-flutter-release.apk` is signed with **APK Signature Scheme v1 + v2** so OEM “APK Installer” apps can open it. Verify with `apksigner verify -v` (Verified using v1 scheme / v2 scheme both true).
 
 ## First launch (no seed data)
 
-The first screen asks you to **create your business profile**. After that, add customers and invoices. Books start empty — there are no Cape Town sample businesses, fake customers or sample invoices.
+The first screen asks you to **create your business profile**. Books start empty — there are no Cape Town sample businesses, fake customers or sample invoices.
+
+Home then shows a short checklist: **business → products → customer → invoice**.
 
 A default “Standard” invoice template (ZAR, 15% VAT, classic layout) is created with the business so you can invoice immediately.
 
@@ -42,7 +46,7 @@ flutter run
 
 Plug in a phone with USB debugging or start an emulator (API 26+).
 
-### Checks
+### Checks (hard gate before any APK)
 
 ```bash
 flutter analyze
@@ -57,6 +61,8 @@ flutter build apk --release
 flutter build appbundle --release
 ```
 
+`assembleRelease` post-processes the sideload APK (`scripts/sign_sideload_apk.py`) so v1 + v2 signatures are present and the file is zipaligned.
+
 Outputs:
 
 - `build/app/outputs/flutter-apk/app-release.apk`
@@ -67,7 +73,7 @@ Outputs:
 1. Copy `keystore.properties.example` to `keystore.properties` (gitignored).
 2. Point `storeFile` at `android/app/play-upload.jks`.
 3. Fill `storePassword`, `keyAlias` (`upload`) and `keyPassword`.
-4. Upload the `.aab` in [Google Play Console](https://play.google.com/console).
+4. Upload the `.aab` in [Google Play Console](https://play.console.google.com).
 5. Turn on **Play App Signing**. Keep `android/app/play-upload.jks` forever — every update must be signed with this upload key.
 
 ### Upload keystore (Gordon — change these if you generate a new key)
@@ -86,15 +92,17 @@ Treat these as the **first upload key**. Generate a replacement with `scripts/ma
 ## What you can do offline
 
 1. **Business profiles** and **customers** (multiple books).
-2. **Per-customer folders** on disk: invoices, receipts, Excel, images, notes — under app support files `businesses/{businessId}/customers/{customerId}/…`.
-3. **sqflite** stores every invoice, line item, payment, note and file index.
-4. **Invoices:** line items, 15% VAT default, discounts, ZAR default, `PREFIX-YEAR-0001` numbering, draft / sent / paid / overdue.
-5. **Handwritten signature** stamped onto the PDF.
-6. Complete **local partition** per business and customer.
-7. **Excel / CSV** import with column mapping, export, and in-app sheet capture into the customer folder (`.xlsx` / `.xls` / `.csv`).
-8. **Share PDF and receipts** via Email and WhatsApp (Android `ACTION_SEND` + `FileProvider` attachment).
-9. **Theme:** light / dark / system plus eight accent palettes (Settings).
-10. **Invoice templates:** classic / modern / compact / letterhead / minimal, plus margins, logo position, picture placement, colours, logo, header/extra pictures, clipboard paste.
+2. **Products catalog** (name, unit price, optional VAT / description) — pick them from invoice line dropdowns.
+3. **Searchable dropdowns** for customers, invoices and products.
+4. **Per-customer folders** on disk: invoices, receipts, Excel, images, notes — under app support files `businesses/{businessId}/customers/{customerId}/…`.
+5. **sqflite** stores every invoice, line item, payment, note, product and file index. Invoice number bumps use `UPDATE`, not `INSERT OR REPLACE`, so child rows are not cascade-deleted.
+6. **Invoices:** line items, 15% VAT default, discounts, ZAR default, `PREFIX-YEAR-0001` numbering, draft / sent / paid / overdue. Save validates the selected customer and shows an error instead of crashing.
+7. **Handwritten signature** stamped onto the PDF.
+8. Complete **local partition** per business and customer.
+9. **Excel / CSV** import with column mapping, export, and in-app sheet capture into the customer folder (`.xlsx` / `.xls` / `.csv`).
+10. **Share PDF and receipts** via Email and WhatsApp (Android `ACTION_SEND` + `FileProvider` attachment).
+11. **Theme:** light / dark / system plus 18 vibrant accent palettes with a live preview in Settings.
+12. **Invoice templates:** classic / modern / compact / letterhead / minimal, plus margins, logo position, picture placement, colours, logo, header/extra pictures, clipboard paste.
 
 ## Privacy
 
@@ -109,7 +117,8 @@ lib/
   data/            sqflite, files, PDF, Excel, native share
   ui/              Material 3 screens, theme, controller
 android/           Flutter Android host (applicationId app.safeinvoice)
-test/              VAT, Excel mapping, widget smoke tests
+scripts/           sideload v1+v2 signer, keystore helper
+test/              VAT, invoice create, products, themes, widget flow
 ```
 
 ## Tests

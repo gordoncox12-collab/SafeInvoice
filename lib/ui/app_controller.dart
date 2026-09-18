@@ -15,6 +15,7 @@ class AppController extends ChangeNotifier {
   AppSettings settings = const AppSettings();
   List<Business> businesses = [];
   List<Customer> customers = [];
+  List<Product> products = [];
   List<Invoice> invoices = [];
   List<Txn> transactions = [];
   List<InvoiceTemplate> templates = [];
@@ -38,11 +39,13 @@ class AppController extends ChangeNotifier {
     final biz = business;
     if (biz == null) {
       customers = [];
+      products = [];
       invoices = [];
       transactions = [];
       templates = [];
     } else {
       customers = await repo.customers(biz.id);
+      products = await repo.products(biz.id);
       invoices = await repo.invoices(biz.id);
       transactions = await repo.transactions(biz.id);
       templates = await repo.templates(biz.id);
@@ -96,14 +99,29 @@ class AppController extends ChangeNotifier {
     await refresh();
   }
 
+  Future<void> saveProduct(Product entity) async {
+    await repo.saveProduct(entity);
+    await refresh();
+  }
+
+  Future<void> deleteProduct(Product entity) async {
+    await repo.deleteProduct(entity);
+    await refresh();
+  }
+
   Future<Invoice> saveInvoice({
     required Invoice invoice,
     required List<InvoiceLineItem> items,
     required bool bumpNumber,
   }) async {
-    final saved = await repo.saveInvoice(invoice: invoice, items: items, bumpNumber: bumpNumber);
-    await refresh();
-    return saved;
+    try {
+      final saved = await repo.saveInvoice(invoice: invoice, items: items, bumpNumber: bumpNumber);
+      await refresh();
+      return saved;
+    } catch (e, st) {
+      debugPrint('AppController.saveInvoice failed: $e\n$st');
+      rethrow;
+    }
   }
 
   Future<void> deleteInvoice(Invoice invoice) async {

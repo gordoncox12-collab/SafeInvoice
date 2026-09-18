@@ -8,6 +8,7 @@ import 'app_controller.dart';
 import 'screens/customer_screens.dart';
 import 'screens/excel_settings_screens.dart';
 import 'screens/invoice_screens.dart';
+import 'screens/product_screens.dart';
 import 'screens/shell.dart';
 import 'theme.dart';
 
@@ -50,8 +51,19 @@ GoRouter createRouter(AppController controller) {
         builder: (context, state) => CustomerEditScreen(id: state.pathParameters['id']!),
       ),
       GoRoute(
+        path: '/products',
+        builder: (context, state) => const ProductListScreen(),
+      ),
+      GoRoute(
+        path: '/product/:id',
+        builder: (context, state) => ProductEditScreen(id: state.pathParameters['id']!),
+      ),
+      GoRoute(
         path: '/invoice/:id',
-        builder: (context, state) => InvoiceEditScreen(id: state.pathParameters['id']!),
+        builder: (context, state) => InvoiceEditScreen(
+          id: state.pathParameters['id']!,
+          initialCustomerId: state.uri.queryParameters['customer'],
+        ),
       ),
       GoRoute(
         path: '/invoice-view/:id',

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:signature/signature.dart';
 
 import '../../data/native_share.dart';
+import '../../data/repository.dart';
 import '../../domain/models.dart';
 import '../../domain/money.dart';
 import '../app_controller.dart';
@@ -27,39 +29,78 @@ class InvoiceListScreen extends StatelessWidget {
         label: const Text('Invoice'),
       ),
       body: app.invoices.isEmpty
-          ? const EmptyHint(
+          ? EmptyHint(
               icon: Icons.receipt_long_outlined,
               title: 'No invoices yet',
-              body: 'Create an invoice with line items, 15% VAT and a handwritten signature.',
+              body: app.customers.isEmpty
+                  ? 'Add a customer first, then create an invoice with catalog line items, 15% VAT and a handwritten signature.'
+                  : 'Create an invoice: pick a customer, add products from the catalog, then generate a PDF.',
+              actionLabel: app.customers.isEmpty ? 'Add a customer' : 'Create invoice',
+              onAction: () => context.push(app.customers.isEmpty ? '/customer-edit/new' : '/invoice/new'),
             )
-          : ListView.builder(
-              itemCount: app.invoices.length,
-              itemBuilder: (context, i) {
-                final inv = app.invoices[i];
-                final customer = app.customers.where((c) => c.id == inv.customerId).firstOrNull;
-                return ListTile(
-                  title: Text(inv.number),
-                  subtitle: Text('${customer?.name ?? 'Customer'} · ${Za.date(inv.issueDate)}'),
-                  trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(Za.money(inv.total, inv.currency)),
-                      StatusChip(inv.status),
-                    ],
+          : ListView(
+              padding: const EdgeInsets.only(bottom: 88),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: SearchableSelect<Invoice>(
+                    label: 'Find invoice',
+                    value: null,
+                    items: app.invoices,
+                    placeholder: 'Tap to search and open',
+                    searchHint: 'Search number or customer',
+                    labelOf: (inv) => inv.number,
+                    subtitleOf: (inv) {
+                      final customer = app.customers.where((c) => c.id == inv.customerId).firstOrNull;
+                      return '${customer?.name ?? 'Customer'} · ${Za.money(inv.total, inv.currency)} · ${niceEnum(inv.status)}';
+                    },
+                    onChanged: (inv) {
+                      if (inv != null) context.push('/invoice-view/${inv.id}');
+                    },
                   ),
-                  onTap: () => context.push('/invoice-view/${inv.id}'),
-                );
-              },
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: SearchableSelect<Customer>(
+                    label: 'Open customer',
+                    value: null,
+                    items: app.customers,
+                    placeholder: 'Tap to search and open',
+                    searchHint: 'Search customers',
+                    labelOf: (c) => c.name,
+                    subtitleOf: (c) => [c.email, c.phone].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+                    onChanged: (c) {
+                      if (c != null) context.push('/customer/${c.id}');
+                    },
+                  ),
+                ),
+                for (final inv in app.invoices)
+                  ListTile(
+                    title: Text(inv.number),
+                    subtitle: Text(
+                      '${app.customers.where((c) => c.id == inv.customerId).firstOrNull?.name ?? 'Customer'} · ${Za.date(inv.issueDate)}',
+                    ),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(Za.money(inv.total, inv.currency)),
+                        StatusChip(inv.status),
+                      ],
+                    ),
+                    onTap: () => context.push('/invoice-view/${inv.id}'),
+                  ),
+              ],
             ),
     );
   }
 }
 
 class InvoiceEditScreen extends StatefulWidget {
-  const InvoiceEditScreen({super.key, required this.id});
+  const InvoiceEditScreen({super.key, required this.id, this.initialCustomerId});
 
   final String id;
+  final String? initialCustomerId;
 
   @override
   State<InvoiceEditScreen> createState() => _InvoiceEditScreenState();
@@ -110,7 +151,10 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
         createdAt: Za.nowMillis(),
         updatedAt: Za.nowMillis(),
       );
-      customerId = invoice!.customerId.isEmpty ? null : invoice!.customerId;
+      customerId = invoice!.customerId.isEmpty ? widget.initialCustomerId : invoice!.customerId;
+      if (customerId == null || app.customers.every((c) => c.id != customerId)) {
+        customerId = widget.initialCustomerId ?? app.customers.firstOrNull?.id;
+      }
       currency.text = biz.defaultCurrency;
       vatPercent.text = trimNum(biz.defaultVatPercent);
       templateId = app.templates.where((t) => t.isDefault).firstOrNull?.id;
@@ -152,6 +196,7 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
 
   MoneyTotals get totals => Money.totals(
         lineTotals: items.map((i) => Money.lineTotal(i.quantity, i.unitPrice)).toList(),
+        taxable: items.map((i) => i.taxable).toList(),
         discountAmount: double.tryParse(discountAmount.text) ?? 0,
         discountPercent: double.tryParse(discountPercent.text) ?? 0,
         vatPercent: double.tryParse(vatPercent.text) ?? 15,
@@ -166,10 +211,12 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
     if (app.customers.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('New invoice')),
-        body: const EmptyHint(
+        body: EmptyHint(
           icon: Icons.people_outline,
           title: 'Add a customer first',
-          body: 'Invoices are stored in a per-customer folder on this device.',
+          body: 'Invoices are stored in a per-customer folder on this device. Add a customer, then come back to invoice them.',
+          actionLabel: 'Add customer',
+          onAction: () => context.push('/customer-edit/new'),
         ),
       );
     }
@@ -183,13 +230,14 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          DropdownButtonFormField<String>(
-            initialValue: customerId ?? app.customers.first.id,
-            decoration: const InputDecoration(labelText: 'Customer'),
-            items: [
-              for (final c in app.customers) DropdownMenuItem(value: c.id, child: Text(c.name)),
-            ],
-            onChanged: (v) => setState(() => customerId = v),
+          SearchableSelect<Customer>(
+            label: 'Customer',
+            value: app.customers.where((c) => c.id == customerId).firstOrNull,
+            items: app.customers,
+            searchHint: 'Search customers',
+            labelOf: (c) => c.name,
+            subtitleOf: (c) => [c.email, c.phone].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
+            onChanged: (c) => setState(() => customerId = c?.id),
           ),
           const SizedBox(height: 12),
           Row(
@@ -228,27 +276,46 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
               ),
             ],
           ),
-          DropdownButtonFormField<InvoiceStatus>(
-            initialValue: status,
-            decoration: const InputDecoration(labelText: 'Status'),
-            items: [
-              for (final s in InvoiceStatus.values)
-                DropdownMenuItem(value: s, child: Text(niceEnum(s))),
-            ],
+          SearchableSelect<InvoiceStatus>(
+            label: 'Status',
+            value: status,
+            items: InvoiceStatus.values,
+            searchHint: 'Search status',
+            labelOf: niceEnum,
             onChanged: (v) => setState(() => status = v ?? status),
           ),
           const SizedBox(height: 12),
           if (app.templates.isNotEmpty)
-            DropdownButtonFormField<String>(
-              initialValue: templateId ?? app.templates.first.id,
-              decoration: const InputDecoration(labelText: 'Template'),
-              items: [
-                for (final t in app.templates) DropdownMenuItem(value: t.id, child: Text(t.name)),
-              ],
-              onChanged: (v) => setState(() => templateId = v),
+            SearchableSelect<InvoiceTemplate>(
+              label: 'Template',
+              value: app.templates.where((t) => t.id == templateId).firstOrNull ??
+                  app.templates.where((t) => t.isDefault).firstOrNull ??
+                  app.templates.first,
+              items: app.templates,
+              searchHint: 'Search templates',
+              labelOf: (t) => t.name,
+              subtitleOf: (t) => niceEnum(t.layout),
+              onChanged: (t) => setState(() => templateId = t?.id),
             ),
           const SizedBox(height: 16),
-          Text('Line items', style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            children: [
+              Expanded(child: Text('Line items', style: Theme.of(context).textTheme.titleMedium)),
+              if (app.products.isEmpty)
+                TextButton(
+                  onPressed: () => context.push('/product/new'),
+                  child: const Text('Add products'),
+                ),
+            ],
+          ),
+          if (app.products.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Tip: save products in the catalog, then pick them from the dropdown on each line.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           for (var i = 0; i < items.length; i++) _lineEditor(i),
           TextButton.icon(
             onPressed: () => setState(() {
@@ -295,28 +362,51 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
   }
 
   Widget _lineEditor(int index) {
+    final app = context.watch<AppController>();
     final item = items[index];
+    final selectedProduct = app.products.where((p) => p.id == item.productId).firstOrNull;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
+            SearchableSelect<Product>(
+              label: 'Product',
+              value: selectedProduct,
+              items: app.products,
+              includeNone: true,
+              noneLabel: 'Custom line (type below)',
+              searchHint: 'Search catalog',
+              labelOf: (p) => p.name,
+              subtitleOf: (p) =>
+                  '${Za.money(p.unitPrice, currency.text.isEmpty ? 'ZAR' : currency.text)}${p.taxable ? ' · VAT' : ' · no VAT'}',
+              onChanged: (p) {
+                if (p == null) {
+                  setState(() => items[index] = item.copyWith(clearProduct: true));
+                  return;
+                }
+                setState(() => items[index] = item.applyProduct(p));
+              },
+            ),
+            const SizedBox(height: 8),
             TextFormField(
+              key: ValueKey('desc-${item.id}-${item.productId ?? 'custom'}-${item.description}'),
               initialValue: item.description,
               decoration: const InputDecoration(labelText: 'Description'),
-              onChanged: (v) => items[index] = item.copyWith(description: v),
+              onChanged: (v) => items[index] = items[index].copyWith(description: v),
             ),
             const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
                   child: TextFormField(
+                    key: ValueKey('qty-${item.id}'),
                     initialValue: trimNum(item.quantity),
                     decoration: const InputDecoration(labelText: 'Qty'),
                     keyboardType: TextInputType.number,
                     onChanged: (v) {
-                      items[index] = item.copyWith(quantity: double.tryParse(v) ?? 0);
+                      items[index] = items[index].copyWith(quantity: double.tryParse(v) ?? 0);
                       setState(() {});
                     },
                   ),
@@ -324,22 +414,27 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextFormField(
+                    key: ValueKey('price-${item.id}-${item.productId ?? 'custom'}-${item.unitPrice}'),
                     initialValue: trimNum(item.unitPrice),
                     decoration: const InputDecoration(labelText: 'Unit price'),
                     keyboardType: TextInputType.number,
                     onChanged: (v) {
-                      items[index] = item.copyWith(unitPrice: double.tryParse(v) ?? 0);
+                      items[index] = items[index].copyWith(unitPrice: double.tryParse(v) ?? 0);
                       setState(() {});
                     },
                   ),
                 ),
                 IconButton(
-                  onPressed: items.length == 1
-                      ? null
-                      : () => setState(() => items.removeAt(index)),
+                  onPressed: items.length == 1 ? null : () => setState(() => items.removeAt(index)),
                   icon: const Icon(Icons.delete_outline),
                 ),
               ],
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('VAT on this line'),
+              value: item.taxable,
+              onChanged: (v) => setState(() => items[index] = items[index].copyWith(taxable: v)),
             ),
           ],
         ),
@@ -349,32 +444,52 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
 
   Future<void> _save() async {
     final app = context.read<AppController>();
-    final cid = customerId ?? app.customers.first.id;
-    final saved = await app.saveInvoice(
-      invoice: invoice!.copyWith(
-        customerId: cid,
-        status: status,
-        issueDate: issueDate,
-        dueDate: dueDate,
-        currency: currency.text.trim().isEmpty ? 'ZAR' : currency.text.trim().toUpperCase(),
-        vatPercent: double.tryParse(vatPercent.text) ?? 15,
-        discountAmount: double.tryParse(discountAmount.text) ?? 0,
-        discountPercent: double.tryParse(discountPercent.text) ?? 0,
-        notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
-        terms: terms.text.trim().isEmpty ? null : terms.text.trim(),
-        templateId: templateId,
-      ),
-      items: [
-        for (var i = 0; i < items.length; i++) items[i].copyWith(position: i),
-      ],
-      bumpNumber: bump,
+    final cid = customerId?.trim() ?? '';
+    if (cid.isEmpty || app.customers.every((c) => c.id != cid)) {
+      await showSnack(context, 'Select a customer before saving.');
+      return;
+    }
+    final hasLine = items.any(
+      (i) => i.description.trim().isNotEmpty || (i.productId != null && i.productId!.trim().isNotEmpty),
     );
-    bump = false;
-    invoice = saved;
-    if (!mounted) return;
-    await showSnack(context, 'Saved ${saved.number}');
-    if (!mounted) return;
-    context.go('/invoice-view/${saved.id}');
+    if (!hasLine) {
+      await showSnack(context, 'Add a product or a description on at least one line.');
+      return;
+    }
+    try {
+      final saved = await app.saveInvoice(
+        invoice: invoice!.copyWith(
+          customerId: cid,
+          status: status,
+          issueDate: issueDate,
+          dueDate: dueDate,
+          currency: currency.text.trim().isEmpty ? 'ZAR' : currency.text.trim().toUpperCase(),
+          vatPercent: double.tryParse(vatPercent.text) ?? 15,
+          discountAmount: double.tryParse(discountAmount.text) ?? 0,
+          discountPercent: double.tryParse(discountPercent.text) ?? 0,
+          notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
+          terms: terms.text.trim().isEmpty ? null : terms.text.trim(),
+          templateId: templateId,
+        ),
+        items: [
+          for (var i = 0; i < items.length; i++) items[i].copyWith(position: i),
+        ],
+        bumpNumber: bump,
+      );
+      bump = false;
+      invoice = saved;
+      if (!mounted) return;
+      await showSnack(context, 'Saved ${saved.number}');
+      if (!mounted) return;
+      context.go('/invoice-view/${saved.id}');
+    } catch (e, st) {
+      debugPrint('Invoice create/save failed: $e\n$st');
+      if (!mounted) return;
+      final message = e is InvoiceSaveException
+          ? e.message
+          : 'Could not save the invoice. Check the customer and line items, then try again.';
+      await showSnack(context, message);
+    }
   }
 }
 
