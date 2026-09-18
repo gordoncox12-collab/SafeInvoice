@@ -8,7 +8,7 @@ Every business, customer, invoice, signature, spreadsheet and receipt lives on t
 - **Application ID:** `app.safeinvoice`
 - **Version:** 2.1.1 (versionCode 4)
 - **Flutter SDK:** 3.47.1 (Dart 3.13.1)
-- **Min SDK:** 26 (Android 8.0)
+- **Min SDK:** 24 (Flutter 3.47). Sideload APK is **v1 + v2** signed (and zipaligned) so OEM APK installers can open it.
 - **UI:** Flutter, Material 3
 - **Database:** sqflite (source of truth)
 - **PDF:** on-device `pdf` package
