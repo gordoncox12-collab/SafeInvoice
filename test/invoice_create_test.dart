@@ -9,7 +9,6 @@ import 'package:safeinvoice/data/pdf_service.dart';
 import 'package:safeinvoice/data/repository.dart';
 import 'package:safeinvoice/domain/models.dart';
 import 'package:safeinvoice/domain/money.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
