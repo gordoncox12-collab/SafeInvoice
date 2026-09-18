@@ -346,13 +346,12 @@ class Product {
     double? unitPrice,
     bool? taxable,
     int? updatedAt,
-    bool clearDescription = false,
   }) {
     return Product(
       id: id,
       businessId: businessId,
       name: name ?? this.name,
-      description: clearDescription ? null : (description ?? this.description),
+      description: description ?? this.description,
       unitPrice: unitPrice ?? this.unitPrice,
       taxable: taxable ?? this.taxable,
       createdAt: createdAt,
@@ -403,6 +402,18 @@ class InvoiceLineItem {
   final double unitPrice;
   final bool taxable;
   final String? productId;
+
+  InvoiceLineItem applyProduct(Product product) {
+    final desc = product.description == null || product.description!.trim().isEmpty
+        ? product.name
+        : '${product.name} — ${product.description}';
+    return copyWith(
+      productId: product.id,
+      description: desc,
+      unitPrice: product.unitPrice,
+      taxable: product.taxable,
+    );
+  }
 
   InvoiceLineItem copyWith({
     int? position,

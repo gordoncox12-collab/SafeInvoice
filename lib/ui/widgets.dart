@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../domain/models.dart';
@@ -287,6 +289,21 @@ class SectionCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Reads bytes synchronously so logos/signatures render in widget tests and on-device.
+class DiskImage extends StatelessWidget {
+  const DiskImage(this.file, {super.key, this.height, this.fit = BoxFit.contain});
+
+  final File file;
+  final double? height;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!file.existsSync()) return const SizedBox.shrink();
+    return Image.memory(file.readAsBytesSync(), height: height, fit: fit);
   }
 }
 

@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,10 +7,32 @@ import 'package:provider/provider.dart';
 import 'package:signature/signature.dart';
 
 import '../../data/native_share.dart';
+import '../../data/repository.dart';
 import '../../domain/models.dart';
 import '../../domain/money.dart';
 import '../app_controller.dart';
+import '../invoice_preview.dart';
 import '../widgets.dart';
+
+Future<void> shareInvoicePdf(
+  BuildContext context,
+  AppController app,
+  Invoice invoice,
+  String target,
+) async {
+  final outcome = await app.shareInvoice(invoice: invoice, target: target);
+  if (!context.mounted) return;
+  if (outcome.ok) {
+    await showSnack(
+      context,
+      target == 'whatsapp'
+          ? 'Opening WhatsApp with the invoice PDF attached'
+          : 'Opening Email with the invoice PDF attached',
+    );
+  } else {
+    await showSnack(context, outcome.message ?? 'Could not share the invoice PDF.');
+  }
+}
 
 class InvoiceListScreen extends StatelessWidget {
   const InvoiceListScreen({super.key});
@@ -274,24 +295,26 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
               ),
             ],
           ),
-          DropdownButtonFormField<InvoiceStatus>(
-            initialValue: status,
-            decoration: const InputDecoration(labelText: 'Status'),
-            items: [
-              for (final s in InvoiceStatus.values)
-                DropdownMenuItem(value: s, child: Text(niceEnum(s))),
-            ],
+          SearchableSelect<InvoiceStatus>(
+            label: 'Status',
+            value: status,
+            items: InvoiceStatus.values,
+            searchHint: 'Search status',
+            labelOf: niceEnum,
             onChanged: (v) => setState(() => status = v ?? status),
           ),
           const SizedBox(height: 12),
           if (app.templates.isNotEmpty)
-            DropdownButtonFormField<String>(
-              initialValue: templateId ?? app.templates.first.id,
-              decoration: const InputDecoration(labelText: 'Template'),
-              items: [
-                for (final t in app.templates) DropdownMenuItem(value: t.id, child: Text(t.name)),
-              ],
-              onChanged: (v) => setState(() => templateId = v),
+            SearchableSelect<InvoiceTemplate>(
+              label: 'Template',
+              value: app.templates.where((t) => t.id == templateId).firstOrNull ??
+                  app.templates.where((t) => t.isDefault).firstOrNull ??
+                  app.templates.first,
+              items: app.templates,
+              searchHint: 'Search templates',
+              labelOf: (t) => t.name,
+              subtitleOf: (t) => niceEnum(t.layout),
+              onChanged: (t) => setState(() => templateId = t?.id),
             ),
           const SizedBox(height: 16),
           Row(
@@ -382,14 +405,7 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
                   setState(() => items[index] = item.copyWith(clearProduct: true));
                   return;
                 }
-                setState(() {
-                  items[index] = item.copyWith(
-                    productId: p.id,
-                    description: p.description == null || p.description!.isEmpty ? p.name : '${p.name} — ${p.description}',
-                    unitPrice: p.unitPrice,
-                    taxable: p.taxable,
-                  );
-                });
+                setState(() => items[index] = item.applyProduct(p));
               },
             ),
             const SizedBox(height: 8),
@@ -447,32 +463,52 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
 
   Future<void> _save() async {
     final app = context.read<AppController>();
-    final cid = customerId ?? app.customers.first.id;
-    final saved = await app.saveInvoice(
-      invoice: invoice!.copyWith(
-        customerId: cid,
-        status: status,
-        issueDate: issueDate,
-        dueDate: dueDate,
-        currency: currency.text.trim().isEmpty ? 'ZAR' : currency.text.trim().toUpperCase(),
-        vatPercent: double.tryParse(vatPercent.text) ?? 15,
-        discountAmount: double.tryParse(discountAmount.text) ?? 0,
-        discountPercent: double.tryParse(discountPercent.text) ?? 0,
-        notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
-        terms: terms.text.trim().isEmpty ? null : terms.text.trim(),
-        templateId: templateId,
-      ),
-      items: [
-        for (var i = 0; i < items.length; i++) items[i].copyWith(position: i),
-      ],
-      bumpNumber: bump,
+    final cid = customerId?.trim() ?? '';
+    if (cid.isEmpty || app.customers.every((c) => c.id != cid)) {
+      await showSnack(context, 'Select a customer before saving.');
+      return;
+    }
+    final hasLine = items.any(
+      (i) => i.description.trim().isNotEmpty || (i.productId != null && i.productId!.trim().isNotEmpty),
     );
-    bump = false;
-    invoice = saved;
-    if (!mounted) return;
-    await showSnack(context, 'Saved ${saved.number}');
-    if (!mounted) return;
-    context.go('/invoice-view/${saved.id}');
+    if (!hasLine) {
+      await showSnack(context, 'Add a product or a description on at least one line.');
+      return;
+    }
+    try {
+      final saved = await app.saveInvoice(
+        invoice: invoice!.copyWith(
+          customerId: cid,
+          status: status,
+          issueDate: issueDate,
+          dueDate: dueDate,
+          currency: currency.text.trim().isEmpty ? 'ZAR' : currency.text.trim().toUpperCase(),
+          vatPercent: double.tryParse(vatPercent.text) ?? 15,
+          discountAmount: double.tryParse(discountAmount.text) ?? 0,
+          discountPercent: double.tryParse(discountPercent.text) ?? 0,
+          notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
+          terms: terms.text.trim().isEmpty ? null : terms.text.trim(),
+          templateId: templateId,
+        ),
+        items: [
+          for (var i = 0; i < items.length; i++) items[i].copyWith(position: i),
+        ],
+        bumpNumber: bump,
+      );
+      bump = false;
+      invoice = saved;
+      if (!mounted) return;
+      await showSnack(context, 'Saved ${saved.number}');
+      if (!mounted) return;
+      context.go('/invoice-view/${saved.id}');
+    } catch (e, st) {
+      debugPrint('Invoice create/save failed: $e\n$st');
+      if (!mounted) return;
+      final message = e is InvoiceSaveException
+          ? e.message
+          : 'Could not save the invoice. Check the customer and line items, then try again.';
+      await showSnack(context, message);
+    }
   }
 }
 
@@ -518,11 +554,16 @@ class InvoiceViewScreen extends StatelessWidget {
                 onPressed: () async {
                   final file = await app.generatePdf(invoice.id);
                   if (context.mounted) {
-                    await showSnack(context, file == null ? 'Could not build PDF' : 'PDF saved in customer invoices folder');
+                    await showSnack(context, file == null ? 'Could not build PDF' : 'PDF saved as ${file.path.split('/').last}');
                   }
                 },
                 icon: const Icon(Icons.picture_as_pdf),
                 label: const Text('Generate PDF'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => context.push('/invoice-preview/${invoice.id}'),
+                icon: const Icon(Icons.visibility_outlined),
+                label: const Text('Preview PDF'),
               ),
               OutlinedButton.icon(
                 onPressed: () => context.push('/signature/${invoice.id}'),
@@ -542,7 +583,12 @@ class InvoiceViewScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Text('Share receipt', style: Theme.of(context).textTheme.titleMedium),
+          Text('Share invoice PDF', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Email and WhatsApp receive the full invoice as an attached PDF (application/pdf).',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -580,7 +626,29 @@ class InvoiceViewScreen extends StatelessWidget {
             child: const Text('Record payment'),
           ),
           const SizedBox(height: 12),
-          if (invoice.signaturePath != null) const Text('Handwritten signature is on file and will stamp the PDF.'),
+          if (invoice.signaturePath != null) ...[
+            Builder(
+              builder: (context) {
+                final file = app.repo.storage.resolve(invoice.signaturePath!);
+                if (!file.existsSync()) {
+                  return const Text('Signature is on file but the image is missing. Capture it again.');
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Handwritten signature (stamped on the PDF)'),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(border: Border.all(color: Colors.black26)),
+                      child: DiskImage(file, height: 72),
+                    ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
           TextButton(
             onPressed: () async {
               await app.deleteInvoice(invoice);
@@ -615,23 +683,8 @@ class InvoiceViewScreen extends StatelessWidget {
     if (context.mounted) await showSnack(context, 'Pasted picture onto invoice');
   }
 
-  Future<void> _share(BuildContext context, AppController app, Invoice invoice, String target) async {
-    var file = invoice.pdfPath == null ? null : app.repo.storage.resolve(invoice.pdfPath!);
-    if (file == null || !file.existsSync()) {
-      file = await app.generatePdf(invoice.id);
-    }
-    if (file == null) {
-      if (context.mounted) await showSnack(context, 'Generate the PDF first');
-      return;
-    }
-    final customer = app.customers.where((c) => c.id == invoice.customerId).firstOrNull;
-    await app.shareFile(
-      file: file,
-      title: 'Invoice ${invoice.number}',
-      body: 'Please find invoice ${invoice.number} from ${app.business?.name ?? 'SafeInvoice'}.',
-      email: customer?.email,
-      target: target,
-    );
+  Future<void> _share(BuildContext context, AppController app, Invoice invoice, String target) {
+    return shareInvoicePdf(context, app, invoice, target);
   }
 
   Future<void> _pay(BuildContext context, AppController app, Invoice invoice) async {
@@ -715,16 +768,23 @@ class _SignatureScreenState extends State<SignatureScreen> {
             padding: const EdgeInsets.all(16),
             child: FilledButton(
               onPressed: () async {
-                final Uint8List? bytes = await controller.toPngBytes();
-                if (bytes == null || !mounted) return;
+                if (controller.isEmpty) {
+                  await showSnack(context, 'Draw a signature first.');
+                  return;
+                }
+                final Uint8List? bytes = await controller.toPngBytes(width: 1000, height: 380);
+                if (bytes == null || bytes.isEmpty || !mounted) {
+                  await showSnack(context, 'Could not capture the signature. Try drawing it again.');
+                  return;
+                }
                 final app = context.read<AppController>();
                 final invoice = app.invoices.where((i) => i.id == widget.id).firstOrNull;
                 if (invoice == null) return;
                 await app.saveSignature(invoice, bytes);
                 if (!mounted) return;
-                await showSnack(context, 'Signature saved');
+                await showSnack(context, 'Signature stamped on the invoice PDF');
                 if (!mounted) return;
-                context.pop();
+                context.go('/invoice-preview/${invoice.id}');
               },
               child: const Text('Stamp on invoice'),
             ),
@@ -734,3 +794,103 @@ class _SignatureScreenState extends State<SignatureScreen> {
     );
   }
 }
+
+class InvoicePreviewScreen extends StatefulWidget {
+  const InvoicePreviewScreen({super.key, required this.id});
+
+  final String id;
+
+  @override
+  State<InvoicePreviewScreen> createState() => _InvoicePreviewScreenState();
+}
+
+class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
+  InvoiceDetails? details;
+  bool loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final app = context.read<AppController>();
+    details = await app.repo.getInvoiceDetails(widget.id);
+    if (mounted) setState(() => loaded = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppController>();
+    final invoice = app.invoices.where((i) => i.id == widget.id).firstOrNull;
+    if (invoice == null) {
+      return const Scaffold(body: Center(child: Text('Invoice not found')));
+    }
+    final customer = app.customers.where((c) => c.id == invoice.customerId).firstOrNull;
+    final business = app.business;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Invoice preview'),
+        actions: [
+          IconButton(
+            tooltip: 'Email PDF',
+            onPressed: () => shareInvoicePdf(context, app, invoice, 'email'),
+            icon: const Icon(Icons.email_outlined),
+          ),
+          IconButton(
+            tooltip: 'WhatsApp PDF',
+            onPressed: () => shareInvoicePdf(context, app, invoice, 'whatsapp'),
+            icon: const Icon(Icons.chat_outlined),
+          ),
+        ],
+      ),
+      body: !loaded
+          ? const Center(child: CircularProgressIndicator())
+          : details == null || business == null || customer == null
+              ? const Center(child: Text('Could not load this invoice'))
+              : ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Text(
+                      'This is the full invoice that Email and WhatsApp attach as a PDF.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    InvoicePaperPreview(
+                      business: business,
+                      customer: customer,
+                      invoice: details!.invoice,
+                      items: details!.items,
+                      logoFile: () {
+                        final template = app.templates.where((t) => t.id == invoice.templateId).firstOrNull ??
+                            app.templates.where((t) => t.isDefault).firstOrNull;
+                        final logoPath = template?.logoPath ?? business.logoPath;
+                        if (logoPath == null) return null;
+                        final f = app.repo.storage.resolve(logoPath);
+                        return f.existsSync() ? f : null;
+                      }(),
+                      signatureFile: () {
+                        if (invoice.signaturePath == null) return null;
+                        final f = app.repo.storage.resolve(invoice.signaturePath!);
+                        return f.existsSync() ? f : null;
+                      }(),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
+                      onPressed: () => shareInvoicePdf(context, app, invoice, 'whatsapp'),
+                      icon: const Icon(Icons.chat_outlined),
+                      label: const Text('Share PDF on WhatsApp'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: () => shareInvoicePdf(context, app, invoice, 'email'),
+                      icon: const Icon(Icons.email_outlined),
+                      label: const Text('Share PDF by Email'),
+                    ),
+                  ],
+                ),
+    );
+  }
+}
+
