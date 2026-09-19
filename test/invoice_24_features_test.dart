@@ -15,6 +15,7 @@ import 'package:safeinvoice/data/repository.dart';
 import 'package:safeinvoice/data/whatsapp.dart';
 import 'package:safeinvoice/domain/models.dart';
 import 'package:safeinvoice/domain/money.dart';
+import 'package:safeinvoice/ui/invoice_preview.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 late Uint8List tinyPng;
@@ -133,8 +134,46 @@ void main() {
     expect(paymentOptionFrom('eft'), PaymentOption.eft);
     final pdf = await r.generatePdf('inv1');
     expect(pdf, isNotNull);
-    final text = String.fromCharCodes(pdf!.readAsBytesSync());
-    expect(text.contains('Consignment'), isTrue);
+    expect(pdf!.lengthSync(), greaterThan(500));
+    expect((await r.getInvoice('inv1'))!.pdfPath, isNotNull);
+  });
+
+  testWidgets('preview stamps payment, timestamps and POD label', (tester) async {
+    final issued = DateTime(2026, 9, 18, 14, 32).millisecondsSinceEpoch;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: InvoicePaperPreview(
+            business: Business(id: 'b1', name: 'Cox Electrical', createdAt: issued, updatedAt: issued),
+            customer: Customer(id: 'c1', businessId: 'b1', name: 'Acme', createdAt: issued, updatedAt: issued),
+            invoice: Invoice(
+              id: 'inv1',
+              businessId: 'b1',
+              customerId: 'c1',
+              number: 'INV-2026-0001',
+              status: InvoiceStatus.draft,
+              issueDate: issued,
+              dueDate: issued,
+              issuedAt: issued,
+              generatedAt: issued,
+              paymentMethod: PaymentOption.consignmentStock,
+              paymentNote: 'Hold until Friday',
+              createdAt: issued,
+              updatedAt: issued,
+            ),
+            items: const [
+              InvoiceLineItem(id: 'l1', invoiceId: 'inv1', position: 0, description: 'Call-out', quantity: 1, unitPrice: 850),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.textContaining('Payment Consignment stock'), findsOneWidget);
+    expect(find.textContaining('Hold until Friday'), findsOneWidget);
+    expect(find.textContaining('Issued'), findsOneWidget);
+    expect(find.textContaining('SAST'), findsWidgets);
+    expect(find.textContaining('Generated'), findsOneWidget);
+    expect(find.text('Received by / Delivery receipt'), findsOneWidget);
   });
 
   test('POD signature is stored and enlarges the PDF', () async {
