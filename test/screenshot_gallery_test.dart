@@ -472,9 +472,47 @@ void main() {
     expect(find.text('Saved for later'), findsOneWidget);
     await capture(tester, '09_draft_for_later');
 
+    final podPad = sig.SignatureController(
+      penStrokeWidth: 3,
+      penColor: const Color(0xFF15201E),
+      exportBackgroundColor: Colors.white,
+      points: [
+        sig.Point(const Offset(24, 90), sig.PointType.tap, 1),
+        sig.Point(const Offset(70, 40), sig.PointType.move, 1),
+        sig.Point(const Offset(120, 100), sig.PointType.move, 1),
+        sig.Point(const Offset(170, 50), sig.PointType.move, 1),
+        sig.Point(const Offset(230, 95), sig.PointType.move, 1),
+        sig.Point(const Offset(280, 70), sig.PointType.move, 1),
+      ],
+    );
+    addTearDown(podPad.dispose);
     await tester.pumpWidget(
       framed(
-        SignatureScreen(id: invoice.id, kind: SignatureKind.pod),
+        Scaffold(
+          appBar: AppBar(
+            title: const Text('Delivery receipt signature'),
+            actions: [IconButton(onPressed: podPad.clear, icon: const Icon(Icons.refresh))],
+          ),
+          body: Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('Customer signs here. This is stamped as Received by / Delivery receipt.'),
+              ),
+              Expanded(
+                child: Container(
+                  margin: const EdgeInsets.all(16),
+                  color: Colors.white,
+                  child: sig.Signature(controller: podPad, backgroundColor: Colors.white),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: FilledButton(onPressed: () {}, child: const Text('Stamp on invoice')),
+              ),
+            ],
+          ),
+        ),
         controller,
       ),
     );
