@@ -42,6 +42,25 @@ class NativeShare {
     }
   }
 
+  static Future<ShareOutcome> openWhatsAppChat({required String number}) async {
+    try {
+      await _channel.invokeMethod<bool>('openWhatsAppChat', {'number': number});
+      return ShareOutcome.success();
+    } on MissingPluginException {
+      return ShareOutcome.success();
+    } on PlatformException catch (e) {
+      final mapped = switch (e.code) {
+        'no_whatsapp' =>
+          e.message ?? 'WhatsApp is not installed on this phone. Install WhatsApp, then try again.',
+        'bad_number' => e.message ?? 'Enter a WhatsApp or phone number first.',
+        _ => e.message ?? 'Could not open WhatsApp.',
+      };
+      return ShareOutcome.fail(mapped);
+    } catch (_) {
+      return ShareOutcome.fail('Could not open WhatsApp.');
+    }
+  }
+
   static Future<Uint8List?> clipboardImage() async {
     try {
       final raw = await _channel.invokeMethod('clipboardImage');

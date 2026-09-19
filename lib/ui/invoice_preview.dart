@@ -16,6 +16,7 @@ class InvoicePaperPreview extends StatelessWidget {
     required this.items,
     this.logoFile,
     this.signatureFile,
+    this.podSignatureFile,
   });
 
   final Business business;
@@ -24,6 +25,7 @@ class InvoicePaperPreview extends StatelessWidget {
   final List<InvoiceLineItem> items;
   final File? logoFile;
   final File? signatureFile;
+  final File? podSignatureFile;
 
   MoneyTotals get totals => Money.totals(
         lineTotals: items.map((i) => Money.lineTotal(i.quantity, i.unitPrice)).toList(),
@@ -86,11 +88,18 @@ class InvoicePaperPreview extends StatelessWidget {
                 alignment: WrapAlignment.spaceBetween,
                 runSpacing: 4,
                 children: [
-                  Text('Issue ${Za.date(invoice.issueDate)}'),
+                  Text('Issued ${Za.dateTime(invoice.displayIssuedAt)}'),
                   Text('Due ${Za.date(invoice.dueDate)}'),
                   Text(invoice.currency, style: const TextStyle(fontWeight: FontWeight.w700)),
                 ],
               ),
+              if (invoice.generatedAt != null) Text('Generated ${Za.dateTime(invoice.generatedAt!)}'),
+              if (invoice.paymentMethod != null)
+                Text(
+                  'Payment ${paymentOptionLabel(invoice.paymentMethod!)}'
+                  '${invoice.paymentNote != null && invoice.paymentNote!.trim().isNotEmpty ? ' · ${invoice.paymentNote}' : ''}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
               const SizedBox(height: 12),
               Table(
                 columnWidths: const {
@@ -153,6 +162,22 @@ class InvoicePaperPreview extends StatelessWidget {
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(border: Border.all(color: Colors.black26)),
                   child: DiskImage(signatureFile!, height: 72),
+                )
+              else
+                Container(
+                  width: 220,
+                  height: 48,
+                  decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Colors.black54))),
+                ),
+              const SizedBox(height: 16),
+              Text('Received by / Delivery receipt', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 8),
+              if (podSignatureFile != null && podSignatureFile!.existsSync())
+                Container(
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(border: Border.all(color: Colors.black26)),
+                  child: DiskImage(podSignatureFile!, height: 72),
                 )
               else
                 Container(

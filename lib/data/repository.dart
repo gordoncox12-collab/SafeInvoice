@@ -292,6 +292,7 @@ class InvoiceRepository {
       subtotal: totals.subtotal,
       vatAmount: totals.vat,
       total: totals.total,
+      issuedAt: invoice.issuedAt ?? Za.combineDateWithNow(invoice.issueDate),
       updatedAt: Za.nowMillis(),
     );
 
@@ -365,6 +366,74 @@ class InvoiceRepository {
     }
   }
 
+  Future<String> savePodSignature(Invoice invoice, Uint8List pngBytes) async {
+    final dir = storage.folder(invoice.businessId, invoice.customerId, FolderType.images);
+    final file = storage.uniqueFile(dir, '${invoice.number}_pod_signature.png');
+    await storage.copyBytes(pngBytes, file);
+    final rel = storage.relativeToRoot(file);
+    await db.update(
+      'invoices',
+      {'podSignaturePath': rel, 'pdfPath': null, 'updatedAt': Za.nowMillis()},
+      where: 'id = ?',
+      whereArgs: [invoice.id],
+    );
+    await indexFile(invoice.businessId, invoice.customerId, FolderType.images, file, 'image/png');
+    return rel;
+  }
+
+  Future<void> setPaymentOption(String invoiceId, PaymentOption? method, {String? note}) async {
+    await db.update(
+      'invoices',
+      {
+        'paymentMethod': method == null ? null : paymentOptionWire(method),
+        'paymentNote': note,
+        'pdfPath': null,
+        'updatedAt': Za.nowMillis(),
+      },
+      where: 'id = ?',
+      whereArgs: [invoiceId],
+    );
+  }
+
+  Future<File?> archiveInvoicePdf(String invoiceId) async {
+    final pdf = await generatePdf(invoiceId);
+    if (pdf == null || !pdf.existsSync()) return null;
+    final details = await getInvoiceDetails(invoiceId);
+    if (details == null) return null;
+    final dest = storage.uniqueFile(
+      storage.invoiceArchiveDir(details.invoice.businessId),
+      invoicePdfFileName(details.invoice.number),
+    );
+    await storage.copyFile(pdf, dest);
+    final rel = storage.relativeToRoot(dest);
+    await db.update(
+      'invoices',
+      {'savedToStoragePath': rel, 'updatedAt': Za.nowMillis()},
+      where: 'id = ?',
+      whereArgs: [details.invoice.id],
+    );
+    await indexFile(
+      details.invoice.businessId,
+      details.invoice.customerId,
+      FolderType.invoices,
+      dest,
+      'application/pdf',
+    );
+    return dest;
+  }
+
+  Future<List<File>> archivedInvoicePdfs(String businessId) async {
+    final dir = storage.invoiceArchiveDir(businessId);
+    if (!dir.existsSync()) return [];
+    final files = dir
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.toLowerCase().endsWith('.pdf'))
+        .toList()
+      ..sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+    return files;
+  }
+
   Future<String> saveSignature(Invoice invoice, Uint8List pngBytes) async {
     final dir = storage.folder(invoice.businessId, invoice.customerId, FolderType.images);
     final file = storage.uniqueFile(dir, '${invoice.number}_signature.png');
@@ -423,7 +492,7 @@ class InvoiceRepository {
     final rel = storage.relativeToRoot(dest);
     await db.update(
       'invoices',
-      {'pdfPath': rel, 'updatedAt': Za.nowMillis()},
+      {'pdfPath': rel, 'generatedAt': Za.nowMillis(), 'updatedAt': Za.nowMillis()},
       where: 'id = ?',
       whereArgs: [details.invoice.id],
     );

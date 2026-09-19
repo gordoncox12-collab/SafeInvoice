@@ -33,7 +33,10 @@ GoRouter createRouter(AppController controller) {
         builder: (context, state, child) => AppShell(location: state.uri.path, child: child),
         routes: [
           GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
-          GoRoute(path: '/invoices', builder: (context, state) => const InvoiceListScreen()),
+          GoRoute(
+            path: '/invoices',
+            builder: (context, state) => InvoiceListScreen(filter: state.uri.queryParameters['filter']),
+          ),
           GoRoute(path: '/customers', builder: (context, state) => const CustomerListScreen()),
           GoRoute(path: '/more', builder: (context, state) => const MoreScreen()),
         ],
@@ -75,7 +78,10 @@ GoRouter createRouter(AppController controller) {
       ),
       GoRoute(
         path: '/signature/:id',
-        builder: (context, state) => SignatureScreen(id: state.pathParameters['id']!),
+        builder: (context, state) => SignatureScreen(
+          id: state.pathParameters['id']!,
+          kind: state.uri.queryParameters['kind'] == 'pod' ? SignatureKind.pod : SignatureKind.authorised,
+        ),
       ),
       GoRoute(
         path: '/excel',

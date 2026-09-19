@@ -283,6 +283,11 @@ void main() {
         (await controller.repo.getInvoice('inv1'))!,
         await signature.readAsBytes(),
       );
+      await controller.repo.savePodSignature(
+        (await controller.repo.getInvoice('inv1'))!,
+        await signature.readAsBytes(),
+      );
+      await controller.repo.setPaymentOption('inv1', PaymentOption.eft, note: 'Paid on collection');
       await controller.refresh();
     });
 
@@ -414,7 +419,12 @@ void main() {
               InvoicePaperPreview(
                 business: controller.business!,
                 customer: customer,
-                invoice: invoice,
+                invoice: invoice.copyWith(
+                  paymentMethod: PaymentOption.eft,
+                  paymentNote: 'Paid on collection',
+                  issuedAt: invoice.displayIssuedAt,
+                  generatedAt: invoice.generatedAt ?? invoice.displayIssuedAt,
+                ),
                 items: [
                   InvoiceLineItem(
                     id: 'l1',
@@ -427,6 +437,7 @@ void main() {
                 ],
                 logoFile: controller.repo.storage.resolve(controller.business!.logoPath!),
                 signatureFile: controller.repo.storage.resolve(invoice.signaturePath!),
+                podSignatureFile: controller.repo.storage.resolve(invoice.podSignaturePath!),
               ),
             ],
           ),
@@ -441,8 +452,74 @@ void main() {
 
     await tester.pumpWidget(framed(InvoiceViewScreen(id: invoice.id), controller));
     await tester.pump();
-    expect(find.text('Email'), findsOneWidget);
-    expect(find.text('WhatsApp'), findsOneWidget);
+    await tester.tap(find.text('Share'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Share PDF by Email'), findsOneWidget);
+    expect(find.text('Share PDF on WhatsApp'), findsOneWidget);
     await capture(tester, '07_share_email_whatsapp');
+    expect(find.text('Open WhatsApp chat'), findsOneWidget);
+    await capture(tester, '11_whatsapp_actions');
+
+    await tester.tap(find.text('Payment options'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Consignment stock'), findsOneWidget);
+    await capture(tester, '08_payment_options_tab');
+
+    await tester.pumpWidget(framed(const HomeScreen(), controller));
+    await tester.pump();
+    expect(find.text('Saved for later'), findsOneWidget);
+    await capture(tester, '09_draft_for_later');
+
+    await tester.pumpWidget(
+      framed(
+        SignatureScreen(id: invoice.id, kind: SignatureKind.pod),
+        controller,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Delivery receipt signature'), findsOneWidget);
+    await capture(tester, '10_pod_signature');
+
+    await tester.pumpWidget(
+      framed(
+        Scaffold(
+          appBar: AppBar(title: const Text('Invoice preview')),
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              InvoicePaperPreview(
+                business: controller.business!,
+                customer: customer,
+                invoice: controller.invoices.single.copyWith(
+                  paymentMethod: PaymentOption.eft,
+                  issuedAt: controller.invoices.single.displayIssuedAt,
+                  generatedAt: controller.invoices.single.displayIssuedAt,
+                ),
+                items: [
+                  InvoiceLineItem(
+                    id: 'l1',
+                    invoiceId: invoice.id,
+                    position: 0,
+                    description: 'Call-out — First hour',
+                    quantity: 2,
+                    unitPrice: 850,
+                  ),
+                ],
+                logoFile: controller.repo.storage.resolve(controller.business!.logoPath!),
+                signatureFile: controller.repo.storage.resolve(controller.invoices.single.signaturePath!),
+                podSignatureFile: controller.repo.storage.resolve(controller.invoices.single.podSignaturePath!),
+              ),
+            ],
+          ),
+        ),
+        controller,
+      ),
+    );
+    await tester.pump();
+    expect(find.textContaining('Issued'), findsOneWidget);
+    expect(find.textContaining('SAST'), findsWidgets);
+    await capture(tester, '12_timestamp_preview');
   });
 }

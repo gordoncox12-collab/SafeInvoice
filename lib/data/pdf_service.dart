@@ -40,6 +40,7 @@ class InvoicePdfService {
     pw.ImageProvider? headerImg;
     pw.ImageProvider? extraImg;
     pw.ImageProvider? signature;
+    pw.ImageProvider? podSignature;
     final attached = <pw.ImageProvider>[];
 
     Future<pw.ImageProvider?> load(String? path) async {
@@ -63,6 +64,7 @@ class InvoicePdfService {
     headerImg = await load(template?.headerImagePath);
     extraImg = await load(template?.extraImagePath);
     signature = await load(details.invoice.signaturePath);
+    podSignature = await load(details.invoice.podSignaturePath);
     for (final img in details.images) {
       final loaded = await load(img.path);
       if (loaded != null) attached.add(loaded);
@@ -309,12 +311,31 @@ class InvoicePdfService {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('Issue date  ${Za.date(invoice.issueDate)}'),
-                pw.Text('Due date  ${Za.date(invoice.dueDate)}'),
+                pw.Text('Issued  ${Za.dateTime(invoice.displayIssuedAt)}'),
+                pw.Text('Due  ${Za.date(invoice.dueDate)}'),
                 pw.Text(invoice.currency, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: primary)),
               ],
             ),
           );
+          if (invoice.generatedAt != null) {
+            widgets.add(pw.SizedBox(height: 4));
+            widgets.add(
+              pw.Text(
+                'Generated  ${Za.dateTime(invoice.generatedAt!)}',
+                style: const pw.TextStyle(color: PdfColors.grey700, fontSize: 9),
+              ),
+            );
+          }
+          if (invoice.paymentMethod != null) {
+            widgets.add(pw.SizedBox(height: 6));
+            widgets.add(
+              pw.Text(
+                'Payment  ${paymentOptionLabel(invoice.paymentMethod!)}'
+                '${invoice.paymentNote != null && invoice.paymentNote!.trim().isNotEmpty ? '  ·  ${invoice.paymentNote}' : ''}',
+                style: pw.TextStyle(color: primary, fontWeight: pw.FontWeight.bold),
+              ),
+            );
+          }
           widgets.add(pw.SizedBox(height: 10));
 
           widgets.add(
@@ -450,6 +471,37 @@ class InvoicePdfService {
                     )
                   else
                     pw.SizedBox(height: 24),
+                ],
+              ),
+            ),
+          );
+
+          widgets.add(pw.SizedBox(height: 10));
+          widgets.add(
+            pw.Container(
+              padding: const pw.EdgeInsets.all(10),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.grey400),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Received by / Delivery receipt',
+                    style: pw.TextStyle(color: primary, fontWeight: pw.FontWeight.bold),
+                  ),
+                  pw.SizedBox(height: 8),
+                  if (podSignature != null)
+                    pw.Image(podSignature, width: 260, height: 96, fit: pw.BoxFit.contain)
+                  else
+                    pw.Container(
+                      width: 220,
+                      height: 48,
+                      alignment: pw.Alignment.bottomCenter,
+                      decoration: const pw.BoxDecoration(
+                        border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey600)),
+                      ),
+                    ),
                 ],
               ),
             ),

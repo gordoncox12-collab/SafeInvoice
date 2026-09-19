@@ -238,6 +238,23 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
           ),
+          if (app.invoices.any((i) => i.savedForLater))
+            SectionCard(
+              title: 'Saved for later',
+              trailing: TextButton(onPressed: () => context.go('/invoices?filter=drafts'), child: const Text('See drafts')),
+              child: Column(
+                children: [
+                  for (final inv in app.invoices.where((i) => i.savedForLater).take(6))
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(inv.number),
+                      subtitle: Text('${Za.dateTime(inv.displayIssuedAt)} · ${Za.money(inv.total, inv.currency)}'),
+                      trailing: const StatusChip(InvoiceStatus.draft),
+                      onTap: () => context.push('/invoice/${inv.id}'),
+                    ),
+                ],
+              ),
+            ),
           SectionCard(
             title: 'Recent invoices',
             trailing: TextButton(onPressed: () => context.go('/invoices'), child: const Text('See all')),

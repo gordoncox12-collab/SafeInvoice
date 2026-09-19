@@ -369,7 +369,9 @@ CREATE TABLE app_settings (
     );
     final now = DateTime.now().millisecondsSinceEpoch;
     await v1.insert('businesses', business('b1').toMap());
-    await v1.insert('customers', customer('c1', 'b1').toMap());
+    // v1 customers has no whatsapp column — insert a v1-shaped row.
+    final customerRow = Map<String, Object?>.from(customer('c1', 'b1').toMap())..remove('whatsapp');
+    await v1.insert('customers', customerRow);
     await v1.insert('invoices', {
       'id': 'old-inv',
       'businessId': 'b1',
@@ -400,8 +402,20 @@ CREATE TABLE app_settings (
     expect(products, isEmpty);
     final invoices = await upgraded.db.query('invoices');
     expect(invoices.single['id'], 'old-inv');
+    expect(invoices.single['issuedAt'], now);
     final info = await upgraded.db.rawQuery('PRAGMA table_info(invoice_line_items)');
     expect(info.any((row) => row['name'] == 'productId'), isTrue);
+    final customerInfo = await upgraded.db.rawQuery('PRAGMA table_info(customers)');
+    expect(customerInfo.any((row) => row['name'] == 'whatsapp'), isTrue);
+    final invoiceInfo = await upgraded.db.rawQuery('PRAGMA table_info(invoices)');
+    expect(invoiceInfo.any((row) => row['name'] == 'paymentMethod'), isTrue);
+    expect(invoiceInfo.any((row) => row['name'] == 'podSignaturePath'), isTrue);
+    await upgraded.db.insert('customers', {
+      ...customer('c2', 'b1').toMap(),
+      'whatsapp': '0820000000',
+    });
+    final loaded = await upgraded.db.query('customers', where: 'id = ?', whereArgs: ['c2']);
+    expect(loaded.single['whatsapp'], '0820000000');
     await upgraded.db.close();
   });
 }

@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import '../data/native_share.dart';
 import '../data/repository.dart';
 import '../data/share_payload.dart';
+import '../data/whatsapp.dart';
 import '../domain/models.dart';
 
 class AppController extends ChangeNotifier {
@@ -134,6 +135,41 @@ class AppController extends ChangeNotifier {
   Future<void> setInvoiceStatus(String id, InvoiceStatus status) async {
     await repo.setStatus(id, status);
     await refresh();
+  }
+
+  Future<String> savePodSignature(Invoice invoice, Uint8List png) async {
+    final path = await repo.savePodSignature(invoice, png);
+    try {
+      await repo.generatePdf(invoice.id);
+    } catch (e, st) {
+      debugPrint('PDF regenerate after POD signature failed: $e\n$st');
+    }
+    await refresh();
+    return path;
+  }
+
+  Future<void> setPaymentOption(Invoice invoice, PaymentOption? method, {String? note}) async {
+    await repo.setPaymentOption(invoice.id, method, note: note);
+    await refresh();
+  }
+
+  Future<File?> archiveInvoicePdf(Invoice invoice) async {
+    final file = await repo.archiveInvoicePdf(invoice.id);
+    await refresh();
+    return file;
+  }
+
+  Future<ShareOutcome> openWhatsAppChat(Customer customer) async {
+    final raw = customerWhatsAppNumber(customer.whatsapp, customer.phone);
+    if (raw == null) {
+      return ShareOutcome.fail('Add a WhatsApp or phone number on the customer profile first.');
+    }
+    try {
+      whatsappChatUrl(raw);
+    } on FormatException catch (e) {
+      return ShareOutcome.fail(e.message);
+    }
+    return NativeShare.openWhatsAppChat(number: raw);
   }
 
   Future<String> saveSignature(Invoice invoice, Uint8List png) async {

@@ -36,9 +36,55 @@ class MainActivity : FlutterActivity() {
                         shareFile(path, mime, title, body, email, target, displayName, result)
                     }
                     "clipboardImage" -> result.success(clipboardImagePng())
+                    "openWhatsAppChat" -> {
+                        val number = call.argument<String>("number") ?: ""
+                        openWhatsAppChat(number, result)
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun digitsOnly(raw: String): String {
+        val stripped = raw.filter { it.isDigit() }
+        return when {
+            stripped.startsWith("00") -> stripped.drop(2)
+            stripped.startsWith("0") && stripped.length in 9..11 -> "27${stripped.drop(1)}"
+            else -> stripped
+        }
+    }
+
+    private fun openWhatsAppChat(raw: String, result: MethodChannel.Result) {
+        val digits = digitsOnly(raw)
+        if (digits.length < 8) {
+            result.error("bad_number", "Enter a WhatsApp or phone number first.", raw)
+            return
+        }
+        val pkg = listOf("com.whatsapp", "com.whatsapp.w4b").firstOrNull { isInstalled(it) }
+        if (pkg == null) {
+            result.error(
+                "no_whatsapp",
+                "WhatsApp is not installed on this phone. Install WhatsApp, then try again.",
+                null,
+            )
+            return
+        }
+        val uri = Uri.parse("https://wa.me/$digits")
+        try {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, uri).apply {
+                    setPackage(pkg)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                },
+            )
+            result.success(true)
+        } catch (_: ActivityNotFoundException) {
+            result.error(
+                "no_whatsapp",
+                "WhatsApp is not installed on this phone. Install WhatsApp, then try again.",
+                null,
+            )
+        }
     }
 
     private fun uriFor(file: File): Uri =

@@ -35,6 +35,10 @@ enum MarginPreset { tight, normal, wide }
 
 enum PicturePlacement { header, afterItems, footer }
 
+enum PaymentOption { cash, eft, consignmentStock, swappedStock }
+
+enum SignatureKind { authorised, pod }
+
 extension EnumWire on Enum {
   String get wire => name.toUpperCase();
 }
@@ -44,6 +48,32 @@ InvoiceStatus invoiceStatusFrom(String raw) {
     (e) => e.name.toUpperCase() == raw.toUpperCase(),
     orElse: () => InvoiceStatus.draft,
   );
+}
+
+String paymentOptionLabel(PaymentOption option) => switch (option) {
+      PaymentOption.cash => 'Cash',
+      PaymentOption.eft => 'EFT',
+      PaymentOption.consignmentStock => 'Consignment stock',
+      PaymentOption.swappedStock => 'Swapped stock',
+    };
+
+String paymentOptionWire(PaymentOption option) => switch (option) {
+      PaymentOption.cash => 'CASH',
+      PaymentOption.eft => 'EFT',
+      PaymentOption.consignmentStock => 'CONSIGNMENT_STOCK',
+      PaymentOption.swappedStock => 'SWAPPED_STOCK',
+    };
+
+PaymentOption? paymentOptionFrom(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  final key = raw.trim().toUpperCase().replaceAll(' ', '_');
+  return switch (key) {
+    'CASH' => PaymentOption.cash,
+    'EFT' => PaymentOption.eft,
+    'CONSIGNMENT_STOCK' || 'CONSIGNMENTSTOCK' => PaymentOption.consignmentStock,
+    'SWAPPED_STOCK' || 'SWAPPEDSTOCK' => PaymentOption.swappedStock,
+    _ => null,
+  };
 }
 
 FolderType folderTypeFrom(String raw) {
@@ -234,6 +264,7 @@ class Customer {
     this.postalCode,
     this.vatNumber,
     this.notes,
+    this.whatsapp,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -250,6 +281,7 @@ class Customer {
   final String? postalCode;
   final String? vatNumber;
   final String? notes;
+  final String? whatsapp;
   final int createdAt;
   final int updatedAt;
 
@@ -264,7 +296,9 @@ class Customer {
     String? postalCode,
     String? vatNumber,
     String? notes,
+    String? whatsapp,
     int? updatedAt,
+    bool clearWhatsapp = false,
   }) {
     return Customer(
       id: id,
@@ -279,6 +313,7 @@ class Customer {
       postalCode: postalCode ?? this.postalCode,
       vatNumber: vatNumber ?? this.vatNumber,
       notes: notes ?? this.notes,
+      whatsapp: clearWhatsapp ? null : (whatsapp ?? this.whatsapp),
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -297,6 +332,7 @@ class Customer {
         'postalCode': postalCode,
         'vatNumber': vatNumber,
         'notes': notes,
+        'whatsapp': whatsapp,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
       };
@@ -314,6 +350,7 @@ class Customer {
         postalCode: m['postalCode'] as String?,
         vatNumber: m['vatNumber'] as String?,
         notes: m['notes'] as String?,
+        whatsapp: m['whatsapp'] as String?,
         createdAt: m['createdAt']! as int,
         updatedAt: m['updatedAt']! as int,
       );
@@ -508,6 +545,12 @@ class Invoice {
     this.subtotal = 0,
     this.vatAmount = 0,
     this.total = 0,
+    this.paymentMethod,
+    this.paymentNote,
+    this.podSignaturePath,
+    this.issuedAt,
+    this.generatedAt,
+    this.savedToStoragePath,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -531,8 +574,18 @@ class Invoice {
   final double subtotal;
   final double vatAmount;
   final double total;
+  final PaymentOption? paymentMethod;
+  final String? paymentNote;
+  final String? podSignaturePath;
+  final int? issuedAt;
+  final int? generatedAt;
+  final String? savedToStoragePath;
   final int createdAt;
   final int updatedAt;
+
+  bool get savedForLater => status == InvoiceStatus.draft;
+
+  int get displayIssuedAt => issuedAt ?? issueDate;
 
   Invoice copyWith({
     String? customerId,
@@ -552,9 +605,18 @@ class Invoice {
     double? subtotal,
     double? vatAmount,
     double? total,
+    PaymentOption? paymentMethod,
+    String? paymentNote,
+    String? podSignaturePath,
+    int? issuedAt,
+    int? generatedAt,
+    String? savedToStoragePath,
     int? updatedAt,
     bool clearSignature = false,
     bool clearPdf = false,
+    bool clearPayment = false,
+    bool clearPod = false,
+    bool clearStorage = false,
   }) {
     return Invoice(
       id: id,
@@ -576,6 +638,12 @@ class Invoice {
       subtotal: subtotal ?? this.subtotal,
       vatAmount: vatAmount ?? this.vatAmount,
       total: total ?? this.total,
+      paymentMethod: clearPayment ? null : (paymentMethod ?? this.paymentMethod),
+      paymentNote: clearPayment ? null : (paymentNote ?? this.paymentNote),
+      podSignaturePath: clearPod ? null : (podSignaturePath ?? this.podSignaturePath),
+      issuedAt: issuedAt ?? this.issuedAt,
+      generatedAt: generatedAt ?? this.generatedAt,
+      savedToStoragePath: clearStorage ? null : (savedToStoragePath ?? this.savedToStoragePath),
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -601,6 +669,12 @@ class Invoice {
         'subtotal': subtotal,
         'vatAmount': vatAmount,
         'total': total,
+        'paymentMethod': paymentMethod == null ? null : paymentOptionWire(paymentMethod!),
+        'paymentNote': paymentNote,
+        'podSignaturePath': podSignaturePath,
+        'issuedAt': issuedAt,
+        'generatedAt': generatedAt,
+        'savedToStoragePath': savedToStoragePath,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
       };
@@ -625,6 +699,12 @@ class Invoice {
         subtotal: (m['subtotal'] as num?)?.toDouble() ?? 0,
         vatAmount: (m['vatAmount'] as num?)?.toDouble() ?? 0,
         total: (m['total'] as num?)?.toDouble() ?? 0,
+        paymentMethod: paymentOptionFrom(m['paymentMethod'] as String?),
+        paymentNote: m['paymentNote'] as String?,
+        podSignaturePath: m['podSignaturePath'] as String?,
+        issuedAt: m['issuedAt'] as int?,
+        generatedAt: m['generatedAt'] as int?,
+        savedToStoragePath: m['savedToStoragePath'] as String?,
         createdAt: m['createdAt']! as int,
         updatedAt: m['updatedAt']! as int,
       );
