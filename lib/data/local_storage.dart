@@ -47,6 +47,13 @@ class LocalStorage {
     return dir;
   }
 
+  /// Durable on-device archive for generated invoice PDFs (offline-first).
+  Directory invoiceArchiveDir(String businessId) {
+    final dir = Directory(p.join(businessDir(businessId).path, 'invoice_archive'));
+    dir.createSync(recursive: true);
+    return dir;
+  }
+
   String relativeToRoot(File file) => p.relative(file.path, from: root.path);
 
   File resolve(String relativeOrAbsolute) {

@@ -9,16 +9,18 @@ class AppDatabase {
   static Future<AppDatabase> open(String dbPath) async {
     final database = await openDatabase(
       dbPath,
-      version: 2,
+      version: 3,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
       onCreate: (db, version) async {
         await _createV1(db);
         await _upgradeToV2(db);
+        await _upgradeToV3(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await _upgradeToV2(db);
+        if (oldVersion < 3) await _upgradeToV3(db);
       },
     );
     return AppDatabase._(database);
@@ -217,6 +219,30 @@ CREATE TABLE IF NOT EXISTS products (
     if (!hasProductId) {
       await db.execute('ALTER TABLE invoice_line_items ADD COLUMN productId TEXT');
     }
+  }
+
+  static Future<void> _addColumnIfMissing(
+    Database db,
+    String table,
+    String column,
+    String spec,
+  ) async {
+    final info = await db.rawQuery('PRAGMA table_info($table)');
+    if (info.any((row) => row['name'] == column)) return;
+    await db.execute('ALTER TABLE $table ADD COLUMN $column $spec');
+  }
+
+  static Future<void> _upgradeToV3(Database db) async {
+    await _addColumnIfMissing(db, 'customers', 'whatsapp', 'TEXT');
+    await _addColumnIfMissing(db, 'invoices', 'paymentMethod', 'TEXT');
+    await _addColumnIfMissing(db, 'invoices', 'paymentNote', 'TEXT');
+    await _addColumnIfMissing(db, 'invoices', 'podSignaturePath', 'TEXT');
+    await _addColumnIfMissing(db, 'invoices', 'issuedAt', 'INTEGER');
+    await _addColumnIfMissing(db, 'invoices', 'generatedAt', 'INTEGER');
+    await _addColumnIfMissing(db, 'invoices', 'savedToStoragePath', 'TEXT');
+    await db.execute(
+      'UPDATE invoices SET issuedAt = issueDate WHERE issuedAt IS NULL',
+    );
   }
 
   static String defaultPath(String supportDir) => p.join(supportDir, 'safeinvoice.db');

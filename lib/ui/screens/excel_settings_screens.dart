@@ -89,7 +89,11 @@ class _ExcelHubScreenState extends State<ExcelHubScreen> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: DropdownButtonFormField<int>(
-                  initialValue: (mapping[field.$1] ?? -1) < 0 ? -1 : mapping[field.$1],
+                  initialValue: () {
+                    final mapped = mapping[field.$1] ?? -1;
+                    if (mapped < 0 || mapped >= preview!.headers.length) return -1;
+                    return mapped;
+                  }(),
                   decoration: InputDecoration(labelText: field.$2),
                   items: [
                     const DropdownMenuItem(value: -1, child: Text('(skip)')),
@@ -449,6 +453,17 @@ class _TemplateEditScreenState extends State<TemplateEditScreen> {
             onChanged: (v) => template = t.copyWith(footerText: v),
           ),
           const SizedBox(height: 12),
+          if (t.logoPath != null)
+            Builder(
+              builder: (context) {
+                final file = context.read<AppController>().repo.storage.resolve(t.logoPath!);
+                if (!file.existsSync()) return const Text('Template logo file is missing.');
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: DiskImage(file, height: 56),
+                );
+              },
+            ),
           Wrap(
             spacing: 8,
             children: [
@@ -512,6 +527,7 @@ class _TemplateEditScreenState extends State<TemplateEditScreen> {
         template = template!.copyWith(extraImagePath: path);
       }
     });
+    await app.saveTemplate(template!);
   }
 
   Future<void> _paste() async {
