@@ -15,6 +15,7 @@ import '../../domain/models.dart';
 import '../../domain/money.dart';
 import '../app_controller.dart';
 import '../invoice_preview.dart';
+import '../outstanding.dart';
 import '../widgets.dart';
 
 Future<void> shareInvoicePdf(
@@ -46,9 +47,14 @@ class InvoiceListScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = context.watch<AppController>();
     final draftsOnly = filter == 'drafts';
-    final visible = draftsOnly ? app.invoices.where((i) => i.savedForLater).toList() : app.invoices;
+    final outstandingOnly = filter == 'outstanding';
+    final visible = outstandingOnly
+        ? app.unpaidOrders().map((o) => o.invoice).toList()
+        : draftsOnly
+            ? app.invoices.where((i) => i.savedForLater).toList()
+            : app.invoices;
     return Scaffold(
-      appBar: AppBar(title: Text(draftsOnly ? 'Saved for later' : 'Invoices')),
+      appBar: AppBar(title: Text(outstandingOnly ? 'Outstanding' : draftsOnly ? 'Saved for later' : 'Invoices')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/invoice/new'),
         icon: const Icon(Icons.add),
@@ -74,8 +80,13 @@ class InvoiceListScreen extends StatelessWidget {
                     children: [
                       FilterChip(
                         label: const Text('All'),
-                        selected: !draftsOnly,
+                        selected: !draftsOnly && !outstandingOnly,
                         onSelected: (_) => context.go('/invoices'),
+                      ),
+                      FilterChip(
+                        label: const Text('Outstanding'),
+                        selected: outstandingOnly,
+                        onSelected: (_) => context.go('/invoices?filter=outstanding'),
                       ),
                       FilterChip(
                         label: const Text('Saved for later'),
@@ -86,9 +97,13 @@ class InvoiceListScreen extends StatelessWidget {
                   ),
                 ),
                 if (visible.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('No drafts saved for later. Use Save for later on an invoice.'),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      outstandingOnly
+                          ? 'No unpaid orders. Outstanding amounts appear here in crimson when a balance is due.'
+                          : 'No drafts saved for later. Use Save for later on an invoice.',
+                    ),
                   ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -130,14 +145,12 @@ class InvoiceListScreen extends StatelessWidget {
                     subtitle: Text(
                       '${app.customers.where((c) => c.id == inv.customerId).firstOrNull?.name ?? 'Customer'} · ${Za.date(inv.issueDate)}',
                     ),
-                    trailing: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(Za.money(inv.total, inv.currency)),
-                        StatusChip(inv.status),
-                      ],
-                    ),
+                    trailing: () {
+                      final due = app.balanceFor(inv).invoiceOutstanding;
+                      return due > 0
+                          ? OutstandingMoney(due, currency: inv.currency)
+                          : Text(Za.money(inv.total, inv.currency));
+                    }(),
                     onTap: () => context.push('/invoice-view/${inv.id}'),
                   ),
               ],
@@ -207,6 +220,9 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
       customerId = invoice!.customerId.isEmpty ? widget.initialCustomerId : invoice!.customerId;
       if (customerId == null || app.customers.every((c) => c.id != customerId)) {
         customerId = widget.initialCustomerId ?? app.customers.firstOrNull?.id;
+      }
+      if (customerId != null) {
+        broughtForward.text = trimNum(app.priorOutstanding(customerId: customerId!, excludeInvoiceId: invoice!.id));
       }
       currency.text = biz.defaultCurrency;
       vatPercent.text = trimNum(biz.defaultVatPercent);
@@ -295,8 +311,38 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
             searchHint: 'Search customers',
             labelOf: (c) => c.name,
             subtitleOf: (c) => [c.email, c.phone].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
-            onChanged: (c) => setState(() => customerId = c?.id),
+            onChanged: (c) {
+              setState(() {
+                customerId = c?.id;
+                if (c != null) {
+                  broughtForward.text = trimNum(
+                    app.priorOutstanding(customerId: c.id, excludeInvoiceId: invoice!.id),
+                  );
+                }
+              });
+            },
           ),
+          if (customerId != null) ...[
+            const SizedBox(height: 8),
+            OutstandingBanner(
+              amount: app.priorOutstanding(customerId: customerId!, excludeInvoiceId: invoice!.id),
+              currency: currency.text.isEmpty ? 'ZAR' : currency.text,
+              label: 'Customer outstanding (unpaid orders)',
+              onPay: app.unpaidOrders(customerId: customerId, excludeInvoiceId: invoice!.id).isEmpty
+                  ? null
+                  : () => showPayOutstandingDialog(context, customerId: customerId!),
+              onSeeAll: () => context.push('/outstanding?customer=$customerId'),
+            ),
+            UnpaidOrdersList(
+              orders: app.unpaidOrders(customerId: customerId, excludeInvoiceId: invoice!.id),
+              compact: true,
+              onPay: (order) => showPayOutstandingDialog(
+                context,
+                customerId: customerId!,
+                invoiceId: order.invoice.id,
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Row(
             children: [
@@ -449,9 +495,23 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Amount paid ${Za.money(paid, currency.text)}'),
-                  Text(
-                    'Outstanding / Balance due ${Za.money(balance.documentOutstanding, currency.text)}',
+                  OutstandingMoney(
+                    balance.documentOutstanding,
+                    currency: currency.text,
                     style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  Text('Outstanding / Balance due', style: Theme.of(context).textTheme.bodySmall),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => showPayOutstandingDialog(
+                        context,
+                        customerId: customerId!,
+                        invoiceId: invoice!.id,
+                      ),
+                      icon: const Icon(Icons.payments_outlined),
+                      label: const Text('Pay outstanding'),
+                    ),
                   ),
                 ],
               );
@@ -846,10 +906,24 @@ class _InvoiceOverviewTab extends StatelessWidget {
                 if (invoice.broughtForward > 0)
                   Text('Previous balance ${Za.money(invoice.broughtForward, invoice.currency)}'),
                 Text('Amount paid ${Za.money(balance.amountPaid, invoice.currency)}'),
-                Text(
-                  'Outstanding / Balance due ${Za.money(balance.documentOutstanding, invoice.currency)}',
+                OutstandingMoney(
+                  balance.documentOutstanding,
+                  currency: invoice.currency,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
+                if (balance.invoiceOutstanding > 0)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => showPayOutstandingDialog(
+                        context,
+                        customerId: invoice.customerId,
+                        invoiceId: invoice.id,
+                      ),
+                      icon: const Icon(Icons.payments_outlined),
+                      label: const Text('Pay outstanding'),
+                    ),
+                  ),
               ],
             );
           },
@@ -1338,6 +1412,10 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
                         return f.existsSync() ? f : null;
                       }(),
                       amountPaid: app.paidToward(invoice.id),
+                      unpaidOrders: app.unpaidOrders(
+                        customerId: invoice.customerId,
+                        excludeInvoiceId: invoice.id,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     FilledButton.icon(
@@ -1353,6 +1431,58 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
                     ),
                   ],
                 ),
+    );
+  }
+}
+
+class OutstandingScreen extends StatelessWidget {
+  const OutstandingScreen({super.key, this.customerId});
+
+  final String? customerId;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppController>();
+    final orders = app.unpaidOrders(customerId: customerId);
+    final customer = customerId == null ? null : app.customers.where((c) => c.id == customerId).firstOrNull;
+    final currency = app.business?.defaultCurrency ?? 'ZAR';
+    final total = customerId == null ? app.booksOutstanding() : app.customerOutstanding(customerId!);
+    return Scaffold(
+      appBar: AppBar(title: Text(customer == null ? 'Outstanding' : '${customer.name} outstanding')),
+      floatingActionButton: total <= 0 || customerId == null
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => showPayOutstandingDialog(context, customerId: customerId!),
+              icon: const Icon(Icons.payments_outlined),
+              label: const Text('Pay outstanding'),
+            ),
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: 88),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: OutstandingBanner(
+              amount: total,
+              currency: currency,
+              label: customer == null ? 'All unpaid orders' : 'Unpaid orders for ${customer.name}',
+              onPay: customerId == null || total <= 0
+                  ? null
+                  : () => showPayOutstandingDialog(context, customerId: customerId!),
+            ),
+          ),
+          UnpaidOrdersList(
+            orders: orders,
+            customerNameOf: customerId == null
+                ? (inv) => app.customers.where((c) => c.id == inv.customerId).firstOrNull?.name ?? 'Customer'
+                : null,
+            onPay: (order) => showPayOutstandingDialog(
+              context,
+              customerId: order.invoice.customerId,
+              invoiceId: order.invoice.id,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

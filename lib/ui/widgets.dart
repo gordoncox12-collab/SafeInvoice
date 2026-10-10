@@ -5,15 +5,35 @@ import 'package:flutter/material.dart';
 import '../domain/models.dart';
 import '../domain/money.dart';
 
+/// Gordon's outstanding colour — used on screen and on the PDF.
+const outstandingCrimson = Color(0xFFDC143C);
+
 class MoneyText extends StatelessWidget {
-  const MoneyText(this.amount, {super.key, this.currency = 'ZAR', this.style});
+  const MoneyText(this.amount, {super.key, this.currency = 'ZAR', this.style, this.outstanding = false});
+
+  final double amount;
+  final String currency;
+  final TextStyle? style;
+  final bool outstanding;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolved = outstanding
+        ? (style ?? const TextStyle()).copyWith(color: outstandingCrimson, fontWeight: FontWeight.w700)
+        : style;
+    return Text(Za.money(amount, currency), style: resolved);
+  }
+}
+
+class OutstandingMoney extends StatelessWidget {
+  const OutstandingMoney(this.amount, {super.key, this.currency = 'ZAR', this.style});
 
   final double amount;
   final String currency;
   final TextStyle? style;
 
   @override
-  Widget build(BuildContext context) => Text(Za.money(amount, currency), style: style);
+  Widget build(BuildContext context) => MoneyText(amount, currency: currency, style: style, outstanding: amount > 0);
 }
 
 class StatusChip extends StatelessWidget {

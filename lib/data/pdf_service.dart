@@ -14,12 +14,15 @@ class InvoicePdfService {
 
   final LocalStorage storage;
 
+  static final PdfColor outstandingCrimson = PdfColor(0xDC / 255, 0x14 / 255, 0x3C / 255);
+
   Future<File> generate({
     required InvoiceDetails details,
     required Business business,
     required Customer customer,
     required InvoiceTemplate? template,
     required File dest,
+    List<UnpaidOrder> unpaidOrders = const [],
   }) async {
     await dest.parent.create(recursive: true);
     final primary = _pdfColor(template?.primaryColor ?? 0xFF0F766E);
@@ -402,7 +405,7 @@ class InvoicePdfService {
                       Za.money(InvoiceBalance.paidToward(details.payments, invoice.id), invoice.currency),
                     ),
                     pw.Container(
-                      color: accent,
+                      color: outstandingCrimson,
                       padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       child: pw.Row(
                         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -427,6 +430,49 @@ class InvoicePdfService {
               ),
             ),
           );
+
+          if (unpaidOrders.isNotEmpty) {
+            widgets.add(pw.SizedBox(height: 14));
+            widgets.add(
+              pw.Text(
+                'Unpaid orders',
+                style: pw.TextStyle(color: outstandingCrimson, fontWeight: pw.FontWeight.bold),
+              ),
+            );
+            widgets.add(
+              pw.Text(
+                'Other outstanding invoices for ${customer.name}',
+                style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
+              ),
+            );
+            widgets.add(pw.SizedBox(height: 4));
+            widgets.add(
+              pw.TableHelper.fromTextArray(
+                headerDecoration: pw.BoxDecoration(color: outstandingCrimson),
+                headerStyle: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 8),
+                cellStyle: const pw.TextStyle(fontSize: 8),
+                headerAlignments: {
+                  0: pw.Alignment.centerLeft,
+                  1: pw.Alignment.centerLeft,
+                  2: pw.Alignment.centerRight,
+                },
+                cellAlignments: {
+                  0: pw.Alignment.centerLeft,
+                  1: pw.Alignment.centerLeft,
+                  2: pw.Alignment.centerRight,
+                },
+                headers: const ['Invoice', 'Date', 'Balance'],
+                data: [
+                  for (final order in unpaidOrders)
+                    [
+                      order.invoice.number,
+                      Za.date(order.invoice.issueDate),
+                      Za.money(order.balance.invoiceOutstanding, order.invoice.currency),
+                    ],
+                ],
+              ),
+            );
+          }
 
           void addPicture(pw.ImageProvider img, String label) {
             widgets.add(pw.SizedBox(height: 8));

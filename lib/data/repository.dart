@@ -507,12 +507,21 @@ class InvoiceRepository {
     template ??= await defaultTemplate(business.id);
     final dir = storage.folder(business.id, customer.id, FolderType.invoices);
     final dest = File(p.join(dir.path, invoicePdfFileName(details.invoice.number)));
+    final allInvoices = await invoices(business.id);
+    final allTxs = await transactions(business.id);
+    final unpaidOthers = unpaidOrdersFor(
+      allInvoices,
+      allTxs,
+      customerId: customer.id,
+      excludeInvoiceId: details.invoice.id,
+    );
     await pdf.generate(
       details: details,
       business: business,
       customer: customer,
       template: template,
       dest: dest,
+      unpaidOrders: unpaidOthers,
     );
     final rel = storage.relativeToRoot(dest);
     await db.update(
@@ -558,6 +567,54 @@ class InvoiceRepository {
       whereArgs: [invoice.id],
     );
     await syncInvoicePaymentStatus(invoice.id);
+  }
+
+  Future<List<Txn>> payOutstanding({
+    required String businessId,
+    required String customerId,
+    required double amount,
+    required String method,
+    String? reference,
+    int? occurredAt,
+    String? invoiceId,
+  }) async {
+    if (amount <= 0) {
+      throw InvoiceSaveException('Enter a payment amount greater than zero.');
+    }
+    final invoices = await this.invoices(businessId);
+    final txs = await transactions(businessId);
+    var unpaid = unpaidOrdersFor(invoices, txs, customerId: customerId);
+    if (invoiceId != null) {
+      unpaid = unpaid.where((o) => o.invoice.id == invoiceId).toList();
+    }
+    if (unpaid.isEmpty) {
+      throw InvoiceSaveException('Nothing outstanding to pay.');
+    }
+    final allocations = allocateOldestFirst(unpaid, amount);
+    if (allocations.isEmpty) {
+      throw InvoiceSaveException('Nothing outstanding to pay.');
+    }
+    final created = <Txn>[];
+    for (final slice in allocations) {
+      final invoice = await getInvoice(slice.invoiceId);
+      if (invoice == null) continue;
+      await recordPayment(
+        invoice: invoice,
+        amount: slice.amount,
+        method: method,
+        reference: reference,
+        occurredAt: occurredAt,
+      );
+      final rows = await db.query(
+        'transactions',
+        where: 'invoiceId = ?',
+        whereArgs: [invoice.id],
+        orderBy: 'createdAt DESC',
+        limit: 1,
+      );
+      if (rows.isNotEmpty) created.add(Txn.fromMap(rows.first));
+    }
+    return created;
   }
 
   Future<List<Txn>> transactions(String businessId) async {

@@ -16,7 +16,9 @@ import 'package:safeinvoice/data/repository.dart';
 import 'package:safeinvoice/domain/models.dart';
 import 'package:safeinvoice/domain/money.dart';
 import 'package:safeinvoice/ui/app_controller.dart';
+import 'package:safeinvoice/domain/balance.dart';
 import 'package:safeinvoice/ui/invoice_preview.dart';
+import 'package:safeinvoice/ui/outstanding.dart';
 import 'package:safeinvoice/ui/screens/customer_screens.dart';
 import 'package:safeinvoice/ui/screens/invoice_screens.dart';
 import 'package:safeinvoice/ui/screens/shell.dart';
@@ -641,5 +643,132 @@ void main() {
     await tester.pump();
     expect(find.text('Total outstanding'), findsOneWidget);
     await capture(tester, '15_customer_outstanding');
+
+    await tester.runAsync(() async {
+      final older = DateTime(2026, 8, 1).millisecondsSinceEpoch;
+      await controller.repo.saveInvoice(
+        invoice: Invoice(
+          id: 'inv0',
+          businessId: 'b1',
+          customerId: 'c1',
+          number: 'INV-2026-0000',
+          status: InvoiceStatus.sent,
+          issueDate: older,
+          dueDate: Za.plusDays(older, 30),
+          createdAt: older,
+          updatedAt: older,
+        ),
+        items: [
+          InvoiceLineItem(
+            id: 'l0',
+            invoiceId: 'inv0',
+            position: 0,
+            description: 'Rewire board',
+            quantity: 1,
+            unitPrice: 400,
+          ),
+        ],
+        bumpNumber: true,
+      );
+      await controller.refresh();
+    });
+
+    await tester.pumpWidget(framed(const InvoiceEditScreen(id: 'new', initialCustomerId: 'c1'), controller));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 120)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(find.textContaining('Customer outstanding'), findsWidgets);
+    expect(find.text('Pay outstanding'), findsWidgets);
+    await capture(tester, '16_editor_auto_outstanding');
+
+    await tester.pumpWidget(framed(const OutstandingScreen(), controller));
+    await tester.pump();
+    expect(find.textContaining('Unpaid orders'), findsWidgets);
+    expect(find.text('INV-2026-0000'), findsWidgets);
+    await capture(tester, '17_unpaid_orders_list');
+
+    final payAmount = TextEditingController(text: '300');
+    final payRef = TextEditingController();
+    addTearDown(payAmount.dispose);
+    addTearDown(payRef.dispose);
+    final unpaid = controller.unpaidOrders(customerId: 'c1');
+    await tester.pumpWidget(
+      framed(
+        Scaffold(
+          appBar: AppBar(title: const Text('Pay outstanding')),
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              PayOutstandingForm(
+                customerName: 'Acme Workshops',
+                remaining: controller.customerOutstanding('c1'),
+                currency: 'ZAR',
+                amount: payAmount,
+                method: PaymentOption.eft,
+                occurredAt: DateTime(2026, 10, 10).millisecondsSinceEpoch,
+                reference: payRef,
+                allocations: allocateOldestFirst(unpaid, 300),
+                invoices: {for (final o in unpaid) o.invoice.id: o.invoice},
+                onAmountChanged: () {},
+                onMethod: (_) {},
+                onDate: (_) {},
+              ),
+            ],
+          ),
+        ),
+        controller,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Pay outstanding'), findsWidgets);
+    expect(find.text('Will apply to'), findsOneWidget);
+    await capture(tester, '18_pay_outstanding_dialog');
+
+    await tester.pumpWidget(
+      framed(
+        Scaffold(
+          appBar: AppBar(title: const Text('Invoice preview')),
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              InvoicePaperPreview(
+                business: controller.business!,
+                customer: customer,
+                invoice: controller.invoices.firstWhere((i) => i.id == 'inv1').copyWith(
+                  paymentMethod: PaymentOption.eft,
+                  broughtForward: controller.priorOutstanding(customerId: 'c1', excludeInvoiceId: 'inv1'),
+                  issuedAt: controller.invoices.firstWhere((i) => i.id == 'inv1').displayIssuedAt,
+                  generatedAt: controller.invoices.firstWhere((i) => i.id == 'inv1').displayIssuedAt,
+                ),
+                items: [
+                  InvoiceLineItem(
+                    id: 'l1',
+                    invoiceId: 'inv1',
+                    position: 0,
+                    description: 'Call-out — First hour',
+                    quantity: 2,
+                    unitPrice: 850,
+                  ),
+                ],
+                logoFile: controller.repo.storage.resolve(controller.business!.logoPath!),
+                signatureFile: controller.repo.storage.resolve(
+                  controller.invoices.firstWhere((i) => i.id == 'inv1').signaturePath!,
+                ),
+                podSignatureFile: controller.repo.storage.resolve(
+                  controller.invoices.firstWhere((i) => i.id == 'inv1').podSignaturePath!,
+                ),
+                amountPaid: 500,
+                unpaidOrders: controller.unpaidOrders(customerId: 'c1', excludeInvoiceId: 'inv1'),
+              ),
+            ],
+          ),
+        ),
+        controller,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Outstanding / Balance due'), findsOneWidget);
+    expect(find.text('Unpaid orders'), findsOneWidget);
+    await capture(tester, '19_pdf_crimson_balance');
   });
 }

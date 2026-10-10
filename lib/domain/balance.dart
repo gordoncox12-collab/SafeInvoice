@@ -102,6 +102,61 @@ double priorOutstandingFor({
   );
 }
 
+class UnpaidOrder {
+  const UnpaidOrder({required this.invoice, required this.balance});
+
+  final Invoice invoice;
+  final InvoiceBalance balance;
+}
+
+class PaymentAllocation {
+  const PaymentAllocation({required this.invoiceId, required this.amount});
+
+  final String invoiceId;
+  final double amount;
+}
+
+/// Unpaid / partially paid invoices, oldest issue date first.
+List<UnpaidOrder> unpaidOrdersFor(
+  Iterable<Invoice> invoices,
+  Iterable<Txn> txs, {
+  String? customerId,
+  String? excludeInvoiceId,
+}) {
+  final list = invoices
+      .where((i) => customerId == null || i.customerId == customerId)
+      .where((i) => excludeInvoiceId == null || i.id != excludeInvoiceId)
+      .where((i) => i.status != InvoiceStatus.cancelled && i.status != InvoiceStatus.draft)
+      .map((i) => UnpaidOrder(invoice: i, balance: InvoiceBalance.of(i, txs)))
+      .where((o) => o.balance.invoiceOutstanding > 0)
+      .toList()
+    ..sort((a, b) {
+      final byDate = a.invoice.issueDate.compareTo(b.invoice.issueDate);
+      if (byDate != 0) return byDate;
+      return a.invoice.number.compareTo(b.invoice.number);
+    });
+  return list;
+}
+
+/// Spread [amount] across [unpaid] oldest-first. Leftover beyond the last
+/// remaining balance is not allocated.
+List<PaymentAllocation> allocateOldestFirst(List<UnpaidOrder> unpaid, double amount) {
+  var leftover = Money.round(amount);
+  final out = <PaymentAllocation>[];
+  if (leftover <= 0) return out;
+  for (final order in unpaid) {
+    if (leftover <= 0) break;
+    final due = order.balance.invoiceOutstanding;
+    if (due <= 0) continue;
+    final take = leftover < due ? leftover : due;
+    final rounded = Money.round(take);
+    if (rounded <= 0) continue;
+    out.add(PaymentAllocation(invoiceId: order.invoice.id, amount: rounded));
+    leftover = Money.round(leftover - rounded);
+  }
+  return out;
+}
+
 double collectedPaymentsFor(Iterable<Txn> txs) {
   var sum = 0.0;
   for (final tx in txs) {

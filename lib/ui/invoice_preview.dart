@@ -19,6 +19,7 @@ class InvoicePaperPreview extends StatelessWidget {
     this.signatureFile,
     this.podSignatureFile,
     this.amountPaid = 0,
+    this.unpaidOrders = const [],
   });
 
   final Business business;
@@ -29,6 +30,7 @@ class InvoicePaperPreview extends StatelessWidget {
   final File? signatureFile;
   final File? podSignatureFile;
   final double amountPaid;
+  final List<UnpaidOrder> unpaidOrders;
 
   MoneyTotals get totals => Money.totals(
         lineTotals: items.map((i) => Money.lineTotal(i.quantity, i.unitPrice)).toList(),
@@ -161,11 +163,33 @@ class InvoicePaperPreview extends StatelessWidget {
                           invoice.currency,
                         ),
                         emphasize: true,
+                        crimson: true,
                       ),
                     ],
                   ),
                 ),
               ),
+              if (unpaidOrders.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text('Unpaid orders', style: theme.textTheme.titleSmall?.copyWith(color: outstandingCrimson)),
+                Text(
+                  'Other outstanding invoices for ${customer.name}',
+                  style: theme.textTheme.bodySmall,
+                ),
+                for (final order in unpaidOrders)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text('${order.invoice.number}  ·  ${Za.date(order.invoice.issueDate)}')),
+                        OutstandingMoney(
+                          order.balance.invoiceOutstanding,
+                          currency: order.invoice.currency,
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
               if (invoice.notes != null && invoice.notes!.trim().isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Text('Notes', style: theme.textTheme.titleSmall),
@@ -240,14 +264,18 @@ class _Cell extends StatelessWidget {
 }
 
 class _TotalRow extends StatelessWidget {
-  const _TotalRow(this.label, this.value, {this.emphasize = false});
+  const _TotalRow(this.label, this.value, {this.emphasize = false, this.crimson = false});
   final String label;
   final String value;
   final bool emphasize;
+  final bool crimson;
 
   @override
   Widget build(BuildContext context) {
-    final style = TextStyle(fontWeight: emphasize ? FontWeight.w800 : FontWeight.w500);
+    final style = TextStyle(
+      fontWeight: emphasize ? FontWeight.w800 : FontWeight.w500,
+      color: crimson ? outstandingCrimson : null,
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(

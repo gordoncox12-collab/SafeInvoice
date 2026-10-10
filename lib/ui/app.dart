@@ -37,6 +37,12 @@ GoRouter createRouter(AppController controller) {
             path: '/invoices',
             builder: (context, state) => InvoiceListScreen(filter: state.uri.queryParameters['filter']),
           ),
+          GoRoute(
+            path: '/outstanding',
+            builder: (context, state) => OutstandingScreen(
+              customerId: state.uri.queryParameters['customer'],
+            ),
+          ),
           GoRoute(path: '/customers', builder: (context, state) => const CustomerListScreen()),
           GoRoute(path: '/more', builder: (context, state) => const MoreScreen()),
         ],

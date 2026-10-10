@@ -6,7 +6,7 @@ Every business, customer, invoice, signature, spreadsheet and receipt lives on t
 
 - **App name:** SafeInvoice
 - **Application ID:** `app.safeinvoice`
-- **Version:** 2.5.0 (versionCode 8)
+- **Version:** 2.6.0 (versionCode 9)
 - **Flutter SDK:** 3.47.1 (Dart 3.13.1)
 - **Min SDK:** Flutter default (sideload APK is re-signed v1+v2 for OEM installers)
 - **UI:** Flutter, Material 3
@@ -20,8 +20,8 @@ This Flutter rebuild replaces the previous Kotlin/Compose Android project. Do no
 
 The repository is public. Download the Flutter release artefacts without a GitHub login:
 
-- Sideload APK: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.5.0/SafeInvoice-flutter-release.apk
-- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.5.0/SafeInvoice-flutter-release.aab
+- Sideload APK: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.6.0/SafeInvoice-flutter-release.apk
+- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.6.0/SafeInvoice-flutter-release.aab
 
 `SafeInvoice-flutter-release.apk` is signed with **APK Signature Scheme v1 + v2** so OEM “APK Installer” apps can open it. Verify with `apksigner verify -v` (Verified using v1 scheme / v2 scheme both true).
 
@@ -103,6 +103,7 @@ Treat these as the **first upload key**. Generate a replacement with `scripts/ma
 7c. **WhatsApp chat** (`wa.me`) plus PDF share; **Save PDF to device storage** (and Files/SAF picker).
 7d. **Issue date and time** (Africa/Johannesburg / SAST) plus generated timestamp on preview and PDF.
 7e. **Outstanding / balance due** on each invoice (amount paid, previous balance, partial payments). Home and customer views show remaining totals. Status moves to paid / partially paid / overdue from the payments.
+7f. Outstanding amounts are **crimson (#DC143C)**. Selecting a customer auto-shows unpaid orders and previous balance. **Pay outstanding** allocates oldest-first. PDFs list other unpaid orders.
 8. Complete **local partition** per business and customer.
 9. **Excel / CSV** import with column mapping, export, and in-app sheet capture into the customer folder (`.xlsx` / `.xls` / `.csv`).
 10. **Share PDF and receipts** via Email and WhatsApp (Android `ACTION_SEND` + `FileProvider` attachment).

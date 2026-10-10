@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../data/native_share.dart';
-import '../data/repository.dart';
+import '../data/repository.dart' show InvoiceRepository, InvoiceSaveException;
 import '../data/share_payload.dart';
 import '../data/whatsapp.dart';
 import '../domain/balance.dart';
@@ -42,6 +42,9 @@ class AppController extends ChangeNotifier {
       );
 
   double collectedAmount() => collectedPaymentsFor(transactions);
+
+  List<UnpaidOrder> unpaidOrders({String? customerId, String? excludeInvoiceId}) =>
+      unpaidOrdersFor(invoices, transactions, customerId: customerId, excludeInvoiceId: excludeInvoiceId);
 
   Business? get business {
     final id = settings.activeBusinessId;
@@ -229,6 +232,31 @@ class AppController extends ChangeNotifier {
       occurredAt: occurredAt,
     );
     await refresh();
+  }
+
+  Future<List<Txn>> payOutstanding({
+    required String customerId,
+    required double amount,
+    required String method,
+    String? reference,
+    int? occurredAt,
+    String? invoiceId,
+  }) async {
+    final biz = business;
+    if (biz == null) {
+      throw InvoiceSaveException('Create a business profile before recording a payment.');
+    }
+    final created = await repo.payOutstanding(
+      businessId: biz.id,
+      customerId: customerId,
+      amount: amount,
+      method: method,
+      reference: reference,
+      occurredAt: occurredAt,
+      invoiceId: invoiceId,
+    );
+    await refresh();
+    return created;
   }
 
   Future<void> saveTransaction(Txn tx) async {

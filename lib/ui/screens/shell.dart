@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../../domain/models.dart';
 import '../../domain/money.dart';
 import '../app_controller.dart';
+import '../outstanding.dart';
 import '../widgets.dart';
 
 class AppShell extends StatelessWidget {
@@ -18,7 +19,7 @@ class AppShell extends StatelessWidget {
   final Widget child;
 
   int get index {
-    if (location.startsWith('/invoices')) return 1;
+    if (location.startsWith('/invoices') || location.startsWith('/outstanding')) return 1;
     if (location.startsWith('/customers')) return 2;
     if (location.startsWith('/more')) return 3;
     return 0;
@@ -204,6 +205,8 @@ class HomeScreen extends StatelessWidget {
                 label: 'Outstanding',
                 value: Za.money(app.booksOutstanding(), biz?.defaultCurrency ?? 'ZAR'),
                 icon: Icons.pending_actions,
+                emphasize: app.booksOutstanding() > 0,
+                onTap: () => context.go('/outstanding'),
               ),
               _StatCard(
                 label: 'Overdue',
@@ -212,6 +215,32 @@ class HomeScreen extends StatelessWidget {
               ),
             ],
           ),
+          if (app.booksOutstanding() > 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: OutstandingBanner(
+                amount: app.booksOutstanding(),
+                currency: biz?.defaultCurrency ?? 'ZAR',
+                label: 'Outstanding',
+                onSeeAll: () => context.go('/outstanding'),
+              ),
+            ),
+          if (app.unpaidOrders().isNotEmpty)
+            SectionCard(
+              title: 'Unpaid orders',
+              trailing: TextButton(onPressed: () => context.go('/outstanding'), child: const Text('See all')),
+              child: UnpaidOrdersList(
+                orders: app.unpaidOrders().take(6).toList(),
+                compact: true,
+                customerNameOf: (inv) =>
+                    app.customers.where((c) => c.id == inv.customerId).firstOrNull?.name ?? 'Customer',
+                onPay: (order) => showPayOutstandingDialog(
+                  context,
+                  customerId: order.invoice.customerId,
+                  invoiceId: order.invoice.id,
+                ),
+              ),
+            ),
           SectionCard(
             title: 'Quick actions',
             child: Wrap(
@@ -365,25 +394,43 @@ class _StepTile extends StatelessWidget {
 }
 
 class _StatCard extends StatelessWidget {
-  const _StatCard({required this.label, required this.value, required this.icon});
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.emphasize = false,
+    this.onTap,
+  });
 
   final String label;
   final String value;
   final IconData icon;
+  final bool emphasize;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final color = emphasize ? outstandingCrimson : Theme.of(context).colorScheme.primary;
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: Theme.of(context).colorScheme.primary),
-            const Spacer(),
-            Text(value, style: Theme.of(context).textTheme.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-          ],
+      color: emphasize ? outstandingCrimson.withValues(alpha: 0.08) : null,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: color),
+              const Spacer(),
+              Text(
+                value,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(color: emphasize ? outstandingCrimson : null),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: emphasize ? outstandingCrimson : null)),
+            ],
+          ),
         ),
       ),
     );
