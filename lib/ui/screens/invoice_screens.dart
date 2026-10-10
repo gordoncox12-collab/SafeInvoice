@@ -1470,6 +1470,7 @@ class OutstandingScreen extends StatelessWidget {
                   : () => showPayOutstandingDialog(context, customerId: customerId!),
             ),
           ),
+          const ListTile(title: Text('Unpaid orders')),
           UnpaidOrdersList(
             orders: orders,
             customerNameOf: customerId == null

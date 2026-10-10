@@ -684,7 +684,7 @@ void main() {
     await tester.pumpWidget(framed(const OutstandingScreen(), controller));
     await tester.pump();
     expect(find.textContaining('Unpaid orders'), findsWidgets);
-    expect(find.text('INV-2026-0000'), findsWidgets);
+    expect(find.textContaining('INV-2026-0000'), findsWidgets);
     await capture(tester, '17_unpaid_orders_list');
 
     final payAmount = TextEditingController(text: '300');

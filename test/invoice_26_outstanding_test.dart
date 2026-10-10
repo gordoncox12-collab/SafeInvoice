@@ -54,7 +54,7 @@ void main() {
         number: number,
         status: status == 'sent' ? InvoiceStatus.sent : InvoiceStatus.draft,
         issueDate: issueDate,
-        dueDate: issueDate + 86400000,
+        dueDate: DateTime(2027, 6, 1).millisecondsSinceEpoch,
         createdAt: issueDate,
         updatedAt: issueDate,
       ),

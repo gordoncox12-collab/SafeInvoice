@@ -217,7 +217,12 @@ class UnpaidOrdersList extends StatelessWidget {
             ),
             trailing: OutstandingMoney(order.balance.invoiceOutstanding, currency: order.invoice.currency),
             isThreeLine: true,
-            onTap: () => context.push('/invoice-view/${order.invoice.id}'),
+            onTap: () {
+              final router = GoRouter.maybeOf(context);
+              if (router != null) {
+                router.push('/invoice-view/${order.invoice.id}');
+              }
+            },
             onLongPress: onPay == null ? null : () => onPay!(order),
           ),
       ],
