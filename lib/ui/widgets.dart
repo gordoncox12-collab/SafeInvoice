@@ -26,6 +26,7 @@ class StatusChip extends StatelessWidget {
     final (label, color) = switch (status) {
       InvoiceStatus.draft => ('Draft', Colors.blueGrey),
       InvoiceStatus.sent => ('Sent', Colors.blue),
+      InvoiceStatus.partiallyPaid => ('Partially paid', Colors.orange),
       InvoiceStatus.paid => ('Paid', Colors.green),
       InvoiceStatus.overdue => ('Overdue', Colors.red),
       InvoiceStatus.cancelled => ('Cancelled', Colors.grey),

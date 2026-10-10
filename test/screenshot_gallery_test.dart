@@ -17,6 +17,7 @@ import 'package:safeinvoice/domain/models.dart';
 import 'package:safeinvoice/domain/money.dart';
 import 'package:safeinvoice/ui/app_controller.dart';
 import 'package:safeinvoice/ui/invoice_preview.dart';
+import 'package:safeinvoice/ui/screens/customer_screens.dart';
 import 'package:safeinvoice/ui/screens/invoice_screens.dart';
 import 'package:safeinvoice/ui/screens/shell.dart';
 import 'package:safeinvoice/ui/theme.dart';
@@ -559,5 +560,86 @@ void main() {
     expect(find.textContaining('Issued'), findsOneWidget);
     expect(find.textContaining('SAST'), findsWidgets);
     await capture(tester, '12_timestamp_preview');
+
+    await tester.runAsync(() async {
+      final current = (await controller.repo.getInvoice('inv1'))!;
+      await controller.repo.saveInvoice(
+        invoice: current.copyWith(broughtForward: 250, status: InvoiceStatus.sent),
+        items: [
+          InvoiceLineItem(
+            id: 'l1',
+            invoiceId: 'inv1',
+            position: 0,
+            description: 'Call-out — First hour',
+            quantity: 2,
+            unitPrice: 850,
+            productId: 'p1',
+          ),
+        ],
+        bumpNumber: false,
+      );
+      await controller.repo.recordPayment(
+        invoice: (await controller.repo.getInvoice('inv1'))!,
+        amount: 500,
+        method: 'EFT',
+      );
+      await controller.refresh();
+    });
+
+    await tester.pumpWidget(framed(const InvoiceEditScreen(id: 'inv1'), controller));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 120)));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(find.text('Outstanding'), findsWidgets);
+    expect(find.textContaining('Amount paid'), findsWidgets);
+    expect(find.textContaining('Balance due'), findsWidgets);
+    await capture(tester, '13_invoice_editor_outstanding');
+
+    await tester.pumpWidget(
+      framed(
+        Scaffold(
+          appBar: AppBar(title: const Text('Invoice preview')),
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              InvoicePaperPreview(
+                business: controller.business!,
+                customer: customer,
+                invoice: controller.invoices.single.copyWith(
+                  paymentMethod: PaymentOption.eft,
+                  broughtForward: 250,
+                  issuedAt: controller.invoices.single.displayIssuedAt,
+                  generatedAt: controller.invoices.single.displayIssuedAt,
+                ),
+                items: [
+                  InvoiceLineItem(
+                    id: 'l1',
+                    invoiceId: invoice.id,
+                    position: 0,
+                    description: 'Call-out — First hour',
+                    quantity: 2,
+                    unitPrice: 850,
+                  ),
+                ],
+                logoFile: controller.repo.storage.resolve(controller.business!.logoPath!),
+                signatureFile: controller.repo.storage.resolve(controller.invoices.single.signaturePath!),
+                podSignatureFile: controller.repo.storage.resolve(controller.invoices.single.podSignaturePath!),
+                amountPaid: 500,
+              ),
+            ],
+          ),
+        ),
+        controller,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('Outstanding / Balance due'), findsOneWidget);
+    expect(find.text('Amount paid'), findsOneWidget);
+    await capture(tester, '14_preview_balance_due');
+
+    await tester.pumpWidget(framed(const CustomerDetailScreen(id: 'c1'), controller));
+    await tester.pump();
+    expect(find.text('Total outstanding'), findsOneWidget);
+    await capture(tester, '15_customer_outstanding');
   });
 }

@@ -9,7 +9,7 @@ class AppDatabase {
   static Future<AppDatabase> open(String dbPath) async {
     final database = await openDatabase(
       dbPath,
-      version: 3,
+      version: 4,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -17,10 +17,12 @@ class AppDatabase {
         await _createV1(db);
         await _upgradeToV2(db);
         await _upgradeToV3(db);
+        await _upgradeToV4(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await _upgradeToV2(db);
         if (oldVersion < 3) await _upgradeToV3(db);
+        if (oldVersion < 4) await _upgradeToV4(db);
       },
     );
     return AppDatabase._(database);
@@ -243,6 +245,10 @@ CREATE TABLE IF NOT EXISTS products (
     await db.execute(
       'UPDATE invoices SET issuedAt = issueDate WHERE issuedAt IS NULL',
     );
+  }
+
+  static Future<void> _upgradeToV4(Database db) async {
+    await _addColumnIfMissing(db, 'invoices', 'broughtForward', 'REAL NOT NULL DEFAULT 0');
   }
 
   static String defaultPath(String supportDir) => p.join(supportDir, 'safeinvoice.db');

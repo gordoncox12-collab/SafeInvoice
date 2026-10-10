@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../domain/balance.dart';
 import '../domain/models.dart';
 import '../domain/money.dart';
 import 'local_storage.dart';
@@ -389,6 +390,33 @@ class InvoicePdfService {
                           pw.Text('Total', style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold)),
                           pw.Text(
                             Za.money(totals.total, invoice.currency),
+                            style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (invoice.broughtForward > 0)
+                      _totalRow('Previous balance', Za.money(invoice.broughtForward, invoice.currency)),
+                    _totalRow(
+                      'Amount paid',
+                      Za.money(InvoiceBalance.paidToward(details.payments, invoice.id), invoice.currency),
+                    ),
+                    pw.Container(
+                      color: accent,
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      child: pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: [
+                          pw.Text(
+                            'Outstanding / Balance due',
+                            style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 9),
+                          ),
+                          pw.Text(
+                            Za.money(
+                              InvoiceBalance.of(invoice.copyWith(total: totals.total), details.payments)
+                                  .documentOutstanding,
+                              invoice.currency,
+                            ),
                             style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold),
                           ),
                         ],

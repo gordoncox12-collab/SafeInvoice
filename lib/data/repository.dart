@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import '../domain/balance.dart';
 import '../domain/models.dart';
 import '../domain/money.dart';
 import 'database.dart';
@@ -211,7 +212,18 @@ class InvoiceRepository {
       invoice: invoice,
       items: items.map(InvoiceLineItem.fromMap).toList(),
       images: images.map(InvoiceImage.fromMap).toList(),
+      payments: await invoicePayments(id),
     );
+  }
+
+  Future<List<Txn>> invoicePayments(String invoiceId) async {
+    final rows = await db.query(
+      'transactions',
+      where: 'invoiceId = ?',
+      whereArgs: [invoiceId],
+      orderBy: 'occurredAt ASC',
+    );
+    return rows.map(Txn.fromMap).toList();
   }
 
   (String, int) nextInvoiceNumber(Business business) {
@@ -324,6 +336,7 @@ class InvoiceRepository {
         );
       }
     });
+    await syncInvoicePaymentStatus(saved.id);
     return saved;
   }
 
@@ -356,13 +369,25 @@ class InvoiceRepository {
   }
 
   Future<void> markOverdue() async {
-    final now = Za.todayMillis();
-    final rows = await db.query('invoices', where: "status = 'SENT'");
+    final rows = await db.query(
+      'invoices',
+      where: "status NOT IN ('PAID', 'CANCELLED', 'DRAFT')",
+    );
     for (final row in rows) {
-      final inv = Invoice.fromMap(row);
-      if (inv.dueDate < now) {
-        await setStatus(inv.id, InvoiceStatus.overdue);
-      }
+      await syncInvoicePaymentStatus(row['id']! as String);
+    }
+  }
+
+  Future<void> syncInvoicePaymentStatus(String invoiceId) async {
+    final invoice = await getInvoice(invoiceId);
+    if (invoice == null || invoice.status == InvoiceStatus.cancelled) return;
+    final payments = await invoicePayments(invoiceId);
+    final next = InvoiceBalance.of(invoice, payments).suggestedStatus(
+      current: invoice.status,
+      pastDue: invoice.dueDate < Za.todayMillis(),
+    );
+    if (next != invoice.status) {
+      await setStatus(invoiceId, next);
     }
   }
 
@@ -505,25 +530,34 @@ class InvoiceRepository {
     required double amount,
     required String method,
     String? reference,
+    int? occurredAt,
   }) async {
+    if (amount <= 0) {
+      throw InvoiceSaveException('Enter a payment amount greater than zero.');
+    }
+    final when = occurredAt ?? Za.nowMillis();
     final tx = Txn(
       id: Za.newId(),
       businessId: invoice.businessId,
       customerId: invoice.customerId,
       invoiceId: invoice.id,
       type: TransactionType.payment,
-      amount: amount,
+      amount: Money.round(amount),
       currency: invoice.currency,
-      occurredAt: Za.nowMillis(),
+      occurredAt: when,
       method: method,
       reference: reference,
       notes: 'Payment for ${invoice.number}',
       createdAt: Za.nowMillis(),
     );
     await saveTransaction(tx);
-    if (amount >= invoice.total) {
-      await setStatus(invoice.id, InvoiceStatus.paid);
-    }
+    await db.update(
+      'invoices',
+      {'pdfPath': null, 'updatedAt': Za.nowMillis()},
+      where: 'id = ?',
+      whereArgs: [invoice.id],
+    );
+    await syncInvoicePaymentStatus(invoice.id);
   }
 
   Future<List<Txn>> transactions(String businessId) async {

@@ -410,6 +410,7 @@ CREATE TABLE app_settings (
     final invoiceInfo = await upgraded.db.rawQuery('PRAGMA table_info(invoices)');
     expect(invoiceInfo.any((row) => row['name'] == 'paymentMethod'), isTrue);
     expect(invoiceInfo.any((row) => row['name'] == 'podSignaturePath'), isTrue);
+    expect(invoiceInfo.any((row) => row['name'] == 'broughtForward'), isTrue);
     await upgraded.db.insert('customers', {
       ...customer('c2', 'b1').toMap(),
       'whatsapp': '0820000000',

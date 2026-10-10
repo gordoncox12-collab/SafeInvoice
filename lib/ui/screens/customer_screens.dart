@@ -54,7 +54,11 @@ class CustomerListScreen extends StatelessWidget {
                     subtitle: Text(
                       [c.email, c.phone].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
                     ),
-                    trailing: Text('${app.invoices.where((inv) => inv.customerId == c.id).length} inv'),
+                    trailing: Text(
+                      app.customerOutstanding(c.id) > 0
+                          ? Za.money(app.customerOutstanding(c.id), app.business?.defaultCurrency ?? 'ZAR')
+                          : '${app.invoices.where((inv) => inv.customerId == c.id).length} inv',
+                    ),
                     onTap: () => context.push('/customer/${c.id}'),
                   ),
               ],
@@ -230,6 +234,19 @@ class CustomerDetailScreen extends StatelessWidget {
             title: Text([customer.email, customer.phone].whereType<String>().where((s) => s.isNotEmpty).join(' · ')),
             subtitle: Text([customer.addressLine1, customer.city, customer.province].whereType<String>().where((s) => s.isNotEmpty).join(', ')),
           ),
+          ListTile(
+            leading: const Icon(Icons.pending_actions_outlined),
+            title: const Text('Total outstanding'),
+            subtitle: Text(
+              app.customerOutstanding(customer.id) > 0
+                  ? 'Balance still due across this customer’s invoices'
+                  : 'Nothing outstanding',
+            ),
+            trailing: Text(
+              Za.money(app.customerOutstanding(customer.id), app.business?.defaultCurrency ?? 'ZAR'),
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
@@ -286,7 +303,9 @@ class CustomerDetailScreen extends StatelessWidget {
             for (final inv in invoices)
               ListTile(
                 title: Text(inv.number),
-                subtitle: Text(Za.money(inv.total, inv.currency)),
+                subtitle: Text(
+                  '${Za.money(inv.total, inv.currency)} · outstanding ${Za.money(app.balanceFor(inv).invoiceOutstanding, inv.currency)}',
+                ),
                 trailing: StatusChip(inv.status),
                 onTap: () => context.push('/invoice-view/${inv.id}'),
               ),

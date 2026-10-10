@@ -10,6 +10,7 @@ import 'package:signature/signature.dart';
 
 import '../../data/native_share.dart';
 import '../../data/repository.dart';
+import '../../domain/balance.dart';
 import '../../domain/models.dart';
 import '../../domain/money.dart';
 import '../app_controller.dart';
@@ -100,7 +101,8 @@ class InvoiceListScreen extends StatelessWidget {
                     labelOf: (inv) => inv.number,
                     subtitleOf: (inv) {
                       final customer = app.customers.where((c) => c.id == inv.customerId).firstOrNull;
-                      return '${customer?.name ?? 'Customer'} · ${Za.money(inv.total, inv.currency)} · ${niceEnum(inv.status)}';
+                      final due = app.balanceFor(inv).invoiceOutstanding;
+                      return '${customer?.name ?? 'Customer'} · ${Za.money(inv.total, inv.currency)} · due ${Za.money(due, inv.currency)} · ${niceEnum(inv.status)}';
                     },
                     onChanged: (inv) {
                       if (inv != null) context.push('/invoice-view/${inv.id}');
@@ -170,6 +172,7 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
   InvoiceStatus status = InvoiceStatus.draft;
   PaymentOption? paymentMethod;
   final paymentNote = TextEditingController();
+  final broughtForward = TextEditingController(text: '0');
   late int issueDate;
   late int dueDate;
 
@@ -230,6 +233,7 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
         currency.text = details.invoice.currency;
         paymentMethod = details.invoice.paymentMethod;
         paymentNote.text = details.invoice.paymentNote ?? '';
+        broughtForward.text = trimNum(details.invoice.broughtForward);
       }
     }
     setState(() => loaded = true);
@@ -244,6 +248,7 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
     vatPercent.dispose();
     currency.dispose();
     paymentNote.dispose();
+    broughtForward.dispose();
     super.dispose();
   }
 
@@ -403,6 +408,55 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
           if (totals.discount > 0) Text('Discount ${Za.money(totals.discount, currency.text)}'),
           Text('VAT ${Za.money(totals.vat, currency.text)}'),
           Text('Total ${Za.money(totals.total, currency.text)}', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 16),
+          Text('Outstanding', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Amount paid and balance due stay on the invoice, preview and PDF.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: broughtForward,
+            decoration: const InputDecoration(
+              labelText: 'Previous balance / brought forward',
+              helperText: 'Optional. Adds the customer’s prior outstanding to the amount due.',
+            ),
+            keyboardType: TextInputType.number,
+            onChanged: (_) => setState(() {}),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () {
+                final cid = customerId;
+                if (cid == null) return;
+                final prior = app.priorOutstanding(customerId: cid, excludeInvoiceId: invoice!.id);
+                setState(() => broughtForward.text = trimNum(prior));
+              },
+              child: const Text('Use previous balance'),
+            ),
+          ),
+          Builder(
+            builder: (context) {
+              final paid = app.paidToward(invoice!.id);
+              final balance = InvoiceBalance(
+                invoiceTotal: totals.total,
+                broughtForward: double.tryParse(broughtForward.text) ?? 0,
+                amountPaid: paid,
+              );
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Amount paid ${Za.money(paid, currency.text)}'),
+                  Text(
+                    'Outstanding / Balance due ${Za.money(balance.documentOutstanding, currency.text)}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ],
+              );
+            },
+          ),
           const SizedBox(height: 12),
           Text('Payment options', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
@@ -565,6 +619,7 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
           templateId: templateId,
           paymentMethod: paymentMethod,
           paymentNote: paymentNote.text.trim().isEmpty ? null : paymentNote.text.trim(),
+          broughtForward: double.tryParse(broughtForward.text) ?? 0,
         ),
         items: lines,
         bumpNumber: bump,
@@ -652,35 +707,95 @@ class InvoiceViewScreen extends StatelessWidget {
   }
 
   Future<void> _pay(BuildContext context, AppController app, Invoice invoice) async {
-    final amount = TextEditingController(text: trimNum(invoice.total));
-    final method = TextEditingController(text: 'EFT');
+    final remaining = app.balanceFor(invoice).documentOutstanding;
+    final amount = TextEditingController(text: remaining > 0 ? trimNum(remaining) : trimNum(invoice.total));
+    var method = invoice.paymentMethod ?? PaymentOption.eft;
+    var occurredAt = Za.nowMillis();
+    final reference = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Record payment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: amount, decoration: const InputDecoration(labelText: 'Amount'), keyboardType: TextInputType.number),
-            const SizedBox(height: 8),
-            TextField(controller: method, decoration: const InputDecoration(labelText: 'Method')),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: const Text('Record payment'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Outstanding ${Za.money(remaining, invoice.currency)}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: amount,
+                  decoration: const InputDecoration(labelText: 'Amount paid'),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Payment date'),
+                  subtitle: Text(Za.date(occurredAt)),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: DateTime.fromMillisecondsSinceEpoch(occurredAt),
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) setLocal(() => occurredAt = picked.millisecondsSinceEpoch);
+                  },
+                ),
+                const SizedBox(height: 4),
+                Text('Method', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final option in PaymentOption.values)
+                      ChoiceChip(
+                        label: Text(paymentOptionLabel(option)),
+                        selected: method == option,
+                        onSelected: (on) {
+                          if (on) setLocal(() => method = option);
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reference,
+                  decoration: const InputDecoration(labelText: 'Reference (optional)'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
-        ],
       ),
     );
     if (ok == true) {
-      await app.recordPayment(
-        invoice: invoice,
-        amount: double.tryParse(amount.text) ?? invoice.total,
-        method: method.text.trim().isEmpty ? 'EFT' : method.text.trim(),
-      );
+      final parsed = double.tryParse(amount.text) ?? 0;
+      if (parsed <= 0) {
+        if (context.mounted) await showSnack(context, 'Enter a payment amount greater than zero.');
+      } else {
+        await app.recordPayment(
+          invoice: invoice,
+          amount: parsed,
+          method: paymentOptionLabel(method),
+          reference: reference.text.trim().isEmpty ? null : reference.text.trim(),
+          occurredAt: occurredAt,
+        );
+        if (context.mounted) await showSnack(context, 'Payment recorded');
+      }
     }
     amount.dispose();
-    method.dispose();
+    reference.dispose();
   }
 }
 
@@ -722,6 +837,23 @@ class _InvoiceOverviewTab extends StatelessWidget {
         const SizedBox(height: 8),
         Text(Za.money(invoice.total, invoice.currency), style: Theme.of(context).textTheme.headlineSmall),
         Text('Subtotal ${Za.money(invoice.subtotal, invoice.currency)} · VAT ${Za.money(invoice.vatAmount, invoice.currency)}'),
+        Builder(
+          builder: (context) {
+            final balance = app.balanceFor(invoice);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (invoice.broughtForward > 0)
+                  Text('Previous balance ${Za.money(invoice.broughtForward, invoice.currency)}'),
+                Text('Amount paid ${Za.money(balance.amountPaid, invoice.currency)}'),
+                Text(
+                  'Outstanding / Balance due ${Za.money(balance.documentOutstanding, invoice.currency)}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            );
+          },
+        ),
         if (invoice.paymentMethod != null) ...[
           const SizedBox(height: 8),
           Text('Payment ${paymentOptionLabel(invoice.paymentMethod!)}'),
@@ -790,6 +922,22 @@ class _InvoiceOverviewTab extends StatelessWidget {
         if (invoice.podSignaturePath != null) ...[
           const SizedBox(height: 12),
           _SignatureThumb(label: 'Received by / Delivery receipt', path: invoice.podSignaturePath!),
+        ],
+        if (app.transactions.any((t) => t.invoiceId == invoice.id && t.type == TransactionType.payment)) ...[
+          const SizedBox(height: 16),
+          Text('Payments', style: Theme.of(context).textTheme.titleMedium),
+          for (final tx in app.transactions.where((t) => t.invoiceId == invoice.id && t.type == TransactionType.payment))
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(Za.money(tx.amount, tx.currency)),
+              subtitle: Text(
+                [
+                  Za.date(tx.occurredAt),
+                  if (tx.method != null) tx.method,
+                  if (tx.reference != null) tx.reference,
+                ].join(' · '),
+              ),
+            ),
         ],
         TextButton(
           onPressed: () async {
@@ -1189,6 +1337,7 @@ class _InvoicePreviewScreenState extends State<InvoicePreviewScreen> {
                         final f = app.repo.storage.resolve(invoice.podSignaturePath!);
                         return f.existsSync() ? f : null;
                       }(),
+                      amountPaid: app.paidToward(invoice.id),
                     ),
                     const SizedBox(height: 16),
                     FilledButton.icon(

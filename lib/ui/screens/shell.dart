@@ -167,9 +167,12 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = context.watch<AppController>();
     final biz = app.business;
-    final outstanding = app.invoices.where((i) => i.status == InvoiceStatus.sent || i.status == InvoiceStatus.overdue);
-    final paid = app.invoices.where((i) => i.status == InvoiceStatus.paid);
-    final overdue = app.invoices.where((i) => i.status == InvoiceStatus.overdue);
+    final overdue = app.invoices.where((i) {
+      if (i.status == InvoiceStatus.cancelled || i.status == InvoiceStatus.draft || i.status == InvoiceStatus.paid) {
+        return false;
+      }
+      return i.dueDate < Za.todayMillis() && app.balanceFor(i).invoiceOutstanding > 0;
+    });
     return Scaffold(
       appBar: AppBar(
         title: Text(biz?.name ?? 'SafeInvoice'),
@@ -199,7 +202,7 @@ class HomeScreen extends StatelessWidget {
               _StatCard(label: 'Customers', value: '${app.customers.length}', icon: Icons.people),
               _StatCard(
                 label: 'Outstanding',
-                value: Za.money(outstanding.fold<double>(0, (a, b) => a + b.total), biz?.defaultCurrency ?? 'ZAR'),
+                value: Za.money(app.booksOutstanding(), biz?.defaultCurrency ?? 'ZAR'),
                 icon: Icons.pending_actions,
               ),
               _StatCard(
@@ -279,7 +282,7 @@ class HomeScreen extends StatelessWidget {
           ),
           SectionCard(
             title: 'Collected',
-            child: Text(Za.money(paid.fold<double>(0, (a, b) => a + b.total), biz?.defaultCurrency ?? 'ZAR')),
+            child: Text(Za.money(app.collectedAmount(), biz?.defaultCurrency ?? 'ZAR')),
           ),
         ],
       ),

@@ -7,6 +7,7 @@ import '../data/native_share.dart';
 import '../data/repository.dart';
 import '../data/share_payload.dart';
 import '../data/whatsapp.dart';
+import '../domain/balance.dart';
 import '../domain/models.dart';
 
 class AppController extends ChangeNotifier {
@@ -22,6 +23,25 @@ class AppController extends ChangeNotifier {
   List<Invoice> invoices = [];
   List<Txn> transactions = [];
   List<InvoiceTemplate> templates = [];
+
+  InvoiceBalance balanceFor(Invoice invoice) => InvoiceBalance.of(invoice, transactions);
+
+  double paidToward(String invoiceId) => InvoiceBalance.paidToward(transactions, invoiceId);
+
+  double booksOutstanding() => booksOutstandingFor(invoices, transactions);
+
+  double customerOutstanding(String customerId) =>
+      customerOutstandingFor(invoices, transactions, customerId);
+
+  double priorOutstanding({required String customerId, String? excludeInvoiceId}) =>
+      priorOutstandingFor(
+        invoices: invoices,
+        txs: transactions,
+        customerId: customerId,
+        excludeInvoiceId: excludeInvoiceId,
+      );
+
+  double collectedAmount() => collectedPaymentsFor(transactions);
 
   Business? get business {
     final id = settings.activeBusinessId;
@@ -199,8 +219,15 @@ class AppController extends ChangeNotifier {
     required double amount,
     required String method,
     String? reference,
+    int? occurredAt,
   }) async {
-    await repo.recordPayment(invoice: invoice, amount: amount, method: method, reference: reference);
+    await repo.recordPayment(
+      invoice: invoice,
+      amount: amount,
+      method: method,
+      reference: reference,
+      occurredAt: occurredAt,
+    );
     await refresh();
   }
 

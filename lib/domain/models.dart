@@ -1,4 +1,4 @@
-enum InvoiceStatus { draft, sent, paid, overdue, cancelled }
+enum InvoiceStatus { draft, sent, partiallyPaid, paid, overdue, cancelled }
 
 enum FolderType { invoices, receipts, excel, images, notes }
 
@@ -551,6 +551,7 @@ class Invoice {
     this.issuedAt,
     this.generatedAt,
     this.savedToStoragePath,
+    this.broughtForward = 0,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -580,6 +581,7 @@ class Invoice {
   final int? issuedAt;
   final int? generatedAt;
   final String? savedToStoragePath;
+  final double broughtForward;
   final int createdAt;
   final int updatedAt;
 
@@ -611,6 +613,7 @@ class Invoice {
     int? issuedAt,
     int? generatedAt,
     String? savedToStoragePath,
+    double? broughtForward,
     int? updatedAt,
     bool clearSignature = false,
     bool clearPdf = false,
@@ -644,6 +647,7 @@ class Invoice {
       issuedAt: issuedAt ?? this.issuedAt,
       generatedAt: generatedAt ?? this.generatedAt,
       savedToStoragePath: clearStorage ? null : (savedToStoragePath ?? this.savedToStoragePath),
+      broughtForward: broughtForward ?? this.broughtForward,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -675,6 +679,7 @@ class Invoice {
         'issuedAt': issuedAt,
         'generatedAt': generatedAt,
         'savedToStoragePath': savedToStoragePath,
+        'broughtForward': broughtForward,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
       };
@@ -705,6 +710,7 @@ class Invoice {
         issuedAt: m['issuedAt'] as int?,
         generatedAt: m['generatedAt'] as int?,
         savedToStoragePath: m['savedToStoragePath'] as String?,
+        broughtForward: (m['broughtForward'] as num?)?.toDouble() ?? 0,
         createdAt: m['createdAt']! as int,
         updatedAt: m['updatedAt']! as int,
       );
@@ -715,11 +721,13 @@ class InvoiceDetails {
     required this.invoice,
     required this.items,
     required this.images,
+    this.payments = const [],
   });
 
   final Invoice invoice;
   final List<InvoiceLineItem> items;
   final List<InvoiceImage> images;
+  final List<Txn> payments;
 }
 
 class Txn {

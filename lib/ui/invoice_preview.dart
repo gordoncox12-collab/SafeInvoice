@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../domain/balance.dart';
 import '../domain/models.dart';
 import '../domain/money.dart';
 import 'widgets.dart';
@@ -17,6 +18,7 @@ class InvoicePaperPreview extends StatelessWidget {
     this.logoFile,
     this.signatureFile,
     this.podSignatureFile,
+    this.amountPaid = 0,
   });
 
   final Business business;
@@ -26,6 +28,7 @@ class InvoicePaperPreview extends StatelessWidget {
   final File? logoFile;
   final File? signatureFile;
   final File? podSignatureFile;
+  final double amountPaid;
 
   MoneyTotals get totals => Money.totals(
         lineTotals: items.map((i) => Money.lineTotal(i.quantity, i.unitPrice)).toList(),
@@ -144,6 +147,21 @@ class InvoicePaperPreview extends StatelessWidget {
                         _TotalRow('Discount', '- ${Za.money(totals.discount, invoice.currency)}'),
                       _TotalRow('VAT ${trimNum(invoice.vatPercent)}%', Za.money(totals.vat, invoice.currency)),
                       _TotalRow('Total', Za.money(totals.total, invoice.currency), emphasize: true),
+                      if (invoice.broughtForward > 0)
+                        _TotalRow('Previous balance', Za.money(invoice.broughtForward, invoice.currency)),
+                      _TotalRow('Amount paid', Za.money(amountPaid, invoice.currency)),
+                      _TotalRow(
+                        'Outstanding / Balance due',
+                        Za.money(
+                          InvoiceBalance(
+                            invoiceTotal: totals.total,
+                            broughtForward: invoice.broughtForward,
+                            amountPaid: amountPaid,
+                          ).documentOutstanding,
+                          invoice.currency,
+                        ),
+                        emphasize: true,
+                      ),
                     ],
                   ),
                 ),
