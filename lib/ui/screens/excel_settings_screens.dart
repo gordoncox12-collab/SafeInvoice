@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/excel_service.dart';
 import '../../data/native_share.dart';
+import '../../domain/legal.dart';
 import '../../domain/models.dart';
 import '../../domain/money.dart';
 import '../app_controller.dart';
@@ -209,6 +210,19 @@ class SettingsScreen extends StatelessWidget {
           Text(
             'Palettes tint the app, navigation and forms. Invoice PDF colours still come from the chosen template.',
             style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 24),
+          Text('Legal', style: Theme.of(context).textTheme.titleMedium),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('Privacy policy'),
+            subtitle: const Text('Offline app. No data is collected or shared.'),
+            onTap: () async {
+              final outcome = await NativeShare.openUrl(privacyPolicyUrl);
+              if (!context.mounted) return;
+              await showSnack(context, outcome.ok ? 'Opening privacy policy' : (outcome.message ?? 'Could not open the policy.'));
+            },
           ),
         ],
       ),

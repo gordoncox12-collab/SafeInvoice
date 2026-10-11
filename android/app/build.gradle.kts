@@ -27,7 +27,7 @@ android {
     defaultConfig {
         applicationId = "app.safeinvoice"
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         resourceConfigurations += listOf("en", "en-rZA")

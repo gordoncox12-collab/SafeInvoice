@@ -40,9 +40,30 @@ class MainActivity : FlutterActivity() {
                         val number = call.argument<String>("number") ?: ""
                         openWhatsAppChat(number, result)
                     }
+                    "openUrl" -> {
+                        val url = call.argument<String>("url") ?: ""
+                        openUrl(url, result)
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun openUrl(url: String, result: MethodChannel.Result) {
+        if (!url.startsWith("https://")) {
+            result.error("bad_url", "Only https links can be opened.", url)
+            return
+        }
+        try {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                },
+            )
+            result.success(true)
+        } catch (_: ActivityNotFoundException) {
+            result.error("no_app", "No browser was found to open this page.", null)
+        }
     }
 
     private fun digitsOnly(raw: String): String {

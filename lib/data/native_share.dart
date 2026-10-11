@@ -61,6 +61,19 @@ class NativeShare {
     }
   }
 
+  static Future<ShareOutcome> openUrl(String url) async {
+    try {
+      await _channel.invokeMethod<bool>('openUrl', {'url': url});
+      return ShareOutcome.success();
+    } on MissingPluginException {
+      return ShareOutcome.success();
+    } on PlatformException catch (e) {
+      return ShareOutcome.fail(e.message ?? 'Could not open the page.');
+    } catch (_) {
+      return ShareOutcome.fail('Could not open the page.');
+    }
+  }
+
   static Future<Uint8List?> clipboardImage() async {
     try {
       final raw = await _channel.invokeMethod('clipboardImage');

@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/native_share.dart';
+import '../../domain/legal.dart';
 import '../../domain/models.dart';
 import '../../domain/money.dart';
 import '../app_controller.dart';
@@ -512,6 +514,19 @@ class MoreScreen extends StatelessWidget {
             leading: Icon(Icons.lock_outline),
             title: Text('Local only'),
             subtitle: Text('No backend. Books stay on this phone.'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('Privacy policy'),
+            subtitle: const Text('No data collected or shared'),
+            onTap: () async {
+              final outcome = await NativeShare.openUrl(privacyPolicyUrl);
+              if (!context.mounted) return;
+              await showSnack(
+                context,
+                outcome.ok ? 'Opening privacy policy' : (outcome.message ?? 'Could not open the policy.'),
+              );
+            },
           ),
         ],
       ),
