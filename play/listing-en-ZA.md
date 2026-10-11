@@ -50,4 +50,10 @@ SafeInvoice starts empty. There is no demo company and no sample invoices.
 
 ## Contact (Play Console)
 
-Gordon fills these in Play Console: email, phone, website (use the privacy policy URL below).
+Gordon fills these in Play Console: email, phone, website.
+
+**Privacy policy URL (public, works now):**  
+https://raw.githubusercontent.com/gordoncox12-collab/SafeInvoice/cursor/safeinvoice-play-261-597d/docs/privacy-policy.md
+
+**HTML page (after enabling GitHub Pages on `docs/`):**  
+https://gordoncox12-collab.github.io/SafeInvoice/privacy-policy.html

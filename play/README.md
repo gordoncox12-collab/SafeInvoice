@@ -19,10 +19,11 @@ Sideload APKs stay on the same release as `SafeInvoice-2.6.1.apk`.
 | Store listing (en-ZA) | [listing-en-ZA.md](listing-en-ZA.md) |
 | Data safety | [data-safety.md](data-safety.md) |
 | Content rating notes | [content-rating.md](content-rating.md) |
-| Privacy policy | https://gordoncox12-collab.github.io/SafeInvoice/privacy-policy.html |
+| Privacy policy (public raw markdown) | https://raw.githubusercontent.com/gordoncox12-collab/SafeInvoice/cursor/safeinvoice-play-261-597d/docs/privacy-policy.md |
+| Privacy policy (HTML, after Pages) | https://gordoncox12-collab.github.io/SafeInvoice/privacy-policy.html |
 | Icon / feature / screenshots | [store/](store/) |
 
-Paste the privacy policy URL into Play Console → App content → Privacy policy, and into the store listing contacts if asked.
+Paste the **raw markdown** privacy URL into Play Console → App content → Privacy policy, and into the store listing contacts if asked. GitHub Pages is not enabled on this repo yet (API 403 / 404). After Gordon enables Pages for the `docs/` folder, the HTML URL can replace the raw link in a later app update.
 
 ## Upload key / keystore (keep a private backup)
 
@@ -56,6 +57,7 @@ Use **Internal testing** first, then **Closed**, then **Production**. Countries:
 
 - A Google Play Console developer account (one-time registration fee, currently US$25)
 - Create the app `SafeInvoice` / `app.safeinvoice` if it does not exist
-- Paste listing copy, Data safety, content rating, privacy URL
+- Paste listing copy, Data safety, content rating, privacy URL (raw markdown URL above)
+- Optional: enable GitHub Pages (Settings → Pages → Deploy from branch, folder `/docs`) so the HTML policy URL works
 - Upload the AAB and complete the declarations (ads: no; news: no; COVID: no; Data safety: no collection)
-- Keep a private backup of `play-upload.jks`
+- Keep a private backup of `play-upload.jks` (and `android/keystore.properties`) offline — never email the keystore

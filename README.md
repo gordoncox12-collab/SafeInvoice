@@ -22,7 +22,9 @@ The repository is public. Download the Flutter release artefacts without a GitHu
 
 - Sideload APK (versioned name — use this on the phone): https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.6.1/SafeInvoice-2.6.1.apk
 - Sideload APK (legacy name): https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.6.1/SafeInvoice-flutter-release.apk
-- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.6.1/SafeInvoice-flutter-release.aab
+- Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.6.1/SafeInvoice-2.6.1.aab
+- Play AAB (legacy name): https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.6.1/SafeInvoice-flutter-release.aab
+- Privacy policy (public): https://raw.githubusercontent.com/gordoncox12-collab/SafeInvoice/cursor/safeinvoice-play-261-597d/docs/privacy-policy.md
 
 Download the **`.apk`**, not the `.aab` (Play bundle — phones cannot open it). Use Chrome or Files, not WhatsApp. The file name must end in `.apk`.
 
