@@ -41,6 +41,6 @@ The app does **not** allow users to create an account.
 
 ## Privacy policy URL (required)
 
-https://raw.githubusercontent.com/gordoncox12-collab/SafeInvoice/cursor/safeinvoice-play-261-597d/docs/privacy-policy.md
+https://raw.githubusercontent.com/gordoncox12-collab/SafeInvoice/main/docs/privacy-policy.md
 
 HTML copy (enable GitHub Pages on `docs/` to publish): https://gordoncox12-collab.github.io/SafeInvoice/privacy-policy.html

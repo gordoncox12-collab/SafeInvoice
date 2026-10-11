@@ -47,11 +47,13 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
-# Signing secrets (the JKS may be committed; passwords stay local)
-keystore.properties
-android/keystore.properties
+# Signing secrets — never commit keys or passwords
 *.jks
-!android/app/play-upload.jks
+*.keystore
+key.properties
+keystore.properties
+**/key.properties
+**/keystore.properties
 
 # Local tooling
 local.properties

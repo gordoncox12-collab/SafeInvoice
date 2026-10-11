@@ -15,5 +15,6 @@ void main() {
     expect(html.contains('offline'), isTrue);
     expect(markdown.contains('does not collect'), isTrue);
     expect(privacyPolicyUrl, contains('raw.githubusercontent.com'));
+    expect(privacyPolicyUrl, contains('/main/docs/privacy-policy.md'));
   });
 }

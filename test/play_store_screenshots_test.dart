@@ -9,6 +9,7 @@ void main() {
     expect(privacyPolicyUrl.startsWith('https://'), isTrue);
     expect(privacyPolicyUrl.contains('privacy-policy'), isTrue);
     expect(privacyPolicyUrl.startsWith('https://raw.githubusercontent.com/'), isTrue);
+    expect(privacyPolicyUrl, contains('/main/docs/privacy-policy.md'));
     expect(File('lib/demo.dart').existsSync(), isFalse);
     expect(File('docs/privacy-policy.md').existsSync(), isTrue);
     expect(File('docs/privacy-policy.md').readAsStringSync(), contains('does not collect'));

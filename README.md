@@ -24,7 +24,7 @@ The repository is public. Download the Flutter release artefacts without a GitHu
 - Sideload APK (legacy name): https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.6.1/SafeInvoice-flutter-release.apk
 - Play AAB: https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.6.1/SafeInvoice-2.6.1.aab
 - Play AAB (legacy name): https://github.com/gordoncox12-collab/SafeInvoice/releases/download/v2.6.1/SafeInvoice-flutter-release.aab
-- Privacy policy (public): https://raw.githubusercontent.com/gordoncox12-collab/SafeInvoice/cursor/safeinvoice-play-261-597d/docs/privacy-policy.md
+- Privacy policy (public): https://raw.githubusercontent.com/gordoncox12-collab/SafeInvoice/main/docs/privacy-policy.md
 
 Download the **`.apk`**, not the `.aab` (Play bundle — phones cannot open it). Use Chrome or Files, not WhatsApp. The file name must end in `.apk`.
 
@@ -76,23 +76,12 @@ Outputs:
 ## Play upload
 
 1. Copy `keystore.properties.example` to `keystore.properties` (gitignored).
-2. Point `storeFile` at `android/app/play-upload.jks`.
+2. Point `storeFile` at your **private** upload keystore (never commit `*.jks`).
 3. Fill `storePassword`, `keyAlias` (`upload`) and `keyPassword`.
 4. Upload the `.aab` in [Google Play Console](https://play.console.google.com).
-5. Turn on **Play App Signing**. Keep `android/app/play-upload.jks` forever — every update must be signed with this upload key.
+5. Turn on **Play App Signing**. Keep the upload keystore forever — every update must be signed with this upload key.
 
-### Upload keystore (Gordon — change these if you generate a new key)
-
-`keystore.properties` is **gitignored**. The first Play upload key for this project is:
-
-| Field | Value |
-| --- | --- |
-| File | `android/app/play-upload.jks` |
-| Alias | `upload` |
-| storePassword | `Si-Play-Upload-2026-GC!` |
-| keyPassword | `Si-Play-Upload-2026-GC!` |
-
-Treat these as the **first upload key**. Generate a replacement with `scripts/make-upload-keystore.sh` **before** the first Play upload, or reset the upload key later in Play Console.
+The upload keystore is **not** in this public repository. Generate one with `scripts/make-upload-keystore.sh` and keep it offline.
 
 ## What you can do offline
 
