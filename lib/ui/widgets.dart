@@ -1,17 +1,39 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../domain/models.dart';
 import '../domain/money.dart';
 
+/// Gordon's outstanding colour — used on screen and on the PDF.
+const outstandingCrimson = Color(0xFFDC143C);
+
 class MoneyText extends StatelessWidget {
-  const MoneyText(this.amount, {super.key, this.currency = 'ZAR', this.style});
+  const MoneyText(this.amount, {super.key, this.currency = 'ZAR', this.style, this.outstanding = false});
+
+  final double amount;
+  final String currency;
+  final TextStyle? style;
+  final bool outstanding;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolved = outstanding
+        ? (style ?? const TextStyle()).copyWith(color: outstandingCrimson, fontWeight: FontWeight.w700)
+        : style;
+    return Text(Za.money(amount, currency), style: resolved);
+  }
+}
+
+class OutstandingMoney extends StatelessWidget {
+  const OutstandingMoney(this.amount, {super.key, this.currency = 'ZAR', this.style});
 
   final double amount;
   final String currency;
   final TextStyle? style;
 
   @override
-  Widget build(BuildContext context) => Text(Za.money(amount, currency), style: style);
+  Widget build(BuildContext context) => MoneyText(amount, currency: currency, style: style, outstanding: amount > 0);
 }
 
 class StatusChip extends StatelessWidget {
@@ -24,6 +46,7 @@ class StatusChip extends StatelessWidget {
     final (label, color) = switch (status) {
       InvoiceStatus.draft => ('Draft', Colors.blueGrey),
       InvoiceStatus.sent => ('Sent', Colors.blue),
+      InvoiceStatus.partiallyPaid => ('Partially paid', Colors.orange),
       InvoiceStatus.paid => ('Paid', Colors.green),
       InvoiceStatus.overdue => ('Overdue', Colors.red),
       InvoiceStatus.cancelled => ('Cancelled', Colors.grey),
@@ -287,6 +310,21 @@ class SectionCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Reads bytes synchronously so logos/signatures render in widget tests and on-device.
+class DiskImage extends StatelessWidget {
+  const DiskImage(this.file, {super.key, this.height, this.fit = BoxFit.contain});
+
+  final File file;
+  final double? height;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!file.existsSync()) return const SizedBox.shrink();
+    return Image.memory(file.readAsBytesSync(), height: height, fit: fit);
   }
 }
 

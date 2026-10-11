@@ -8,6 +8,7 @@ class Za {
   static const timeZone = 'Africa/Johannesburg';
 
   static final DateFormat _date = DateFormat('dd MMM yyyy', localeName);
+  static final DateFormat _dateTime = DateFormat('dd MMM yyyy, HH:mm', localeName);
   static final NumberFormat _zar = NumberFormat.currency(
     locale: localeName,
     symbol: 'R',
@@ -32,6 +33,17 @@ class Za {
 
   static String date(int epochMillis) {
     return _date.format(DateTime.fromMillisecondsSinceEpoch(epochMillis));
+  }
+
+  /// Local wall-clock stamp. On Gordon's phone this is Africa/Johannesburg.
+  static String dateTime(int epochMillis) {
+    return '${_dateTime.format(DateTime.fromMillisecondsSinceEpoch(epochMillis))} SAST';
+  }
+
+  static int combineDateWithNow(int epochMillis) {
+    final d = DateTime.fromMillisecondsSinceEpoch(epochMillis);
+    final n = DateTime.now();
+    return DateTime(d.year, d.month, d.day, n.hour, n.minute, n.second).millisecondsSinceEpoch;
   }
 
   static String money(double amount, [String currency = 'ZAR']) {

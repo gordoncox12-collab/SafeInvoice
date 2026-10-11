@@ -1,9 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../data/native_share.dart';
-import '../data/repository.dart';
+import '../data/repository.dart' show InvoiceRepository, InvoiceSaveException;
+import '../data/share_payload.dart';
+import '../data/whatsapp.dart';
+import '../domain/balance.dart';
 import '../domain/models.dart';
 
 class AppController extends ChangeNotifier {
@@ -19,6 +23,28 @@ class AppController extends ChangeNotifier {
   List<Invoice> invoices = [];
   List<Txn> transactions = [];
   List<InvoiceTemplate> templates = [];
+
+  InvoiceBalance balanceFor(Invoice invoice) => InvoiceBalance.of(invoice, transactions);
+
+  double paidToward(String invoiceId) => InvoiceBalance.paidToward(transactions, invoiceId);
+
+  double booksOutstanding() => booksOutstandingFor(invoices, transactions);
+
+  double customerOutstanding(String customerId) =>
+      customerOutstandingFor(invoices, transactions, customerId);
+
+  double priorOutstanding({required String customerId, String? excludeInvoiceId}) =>
+      priorOutstandingFor(
+        invoices: invoices,
+        txs: transactions,
+        customerId: customerId,
+        excludeInvoiceId: excludeInvoiceId,
+      );
+
+  double collectedAmount() => collectedPaymentsFor(transactions);
+
+  List<UnpaidOrder> unpaidOrders({String? customerId, String? excludeInvoiceId}) =>
+      unpaidOrdersFor(invoices, transactions, customerId: customerId, excludeInvoiceId: excludeInvoiceId);
 
   Business? get business {
     final id = settings.activeBusinessId;
@@ -114,9 +140,14 @@ class AppController extends ChangeNotifier {
     required List<InvoiceLineItem> items,
     required bool bumpNumber,
   }) async {
-    final saved = await repo.saveInvoice(invoice: invoice, items: items, bumpNumber: bumpNumber);
-    await refresh();
-    return saved;
+    try {
+      final saved = await repo.saveInvoice(invoice: invoice, items: items, bumpNumber: bumpNumber);
+      await refresh();
+      return saved;
+    } catch (e, st) {
+      debugPrint('AppController.saveInvoice failed: $e\n$st');
+      rethrow;
+    }
   }
 
   Future<void> deleteInvoice(Invoice invoice) async {
@@ -129,8 +160,48 @@ class AppController extends ChangeNotifier {
     await refresh();
   }
 
+  Future<String> savePodSignature(Invoice invoice, Uint8List png) async {
+    final path = await repo.savePodSignature(invoice, png);
+    try {
+      await repo.generatePdf(invoice.id);
+    } catch (e, st) {
+      debugPrint('PDF regenerate after POD signature failed: $e\n$st');
+    }
+    await refresh();
+    return path;
+  }
+
+  Future<void> setPaymentOption(Invoice invoice, PaymentOption? method, {String? note}) async {
+    await repo.setPaymentOption(invoice.id, method, note: note);
+    await refresh();
+  }
+
+  Future<File?> archiveInvoicePdf(Invoice invoice) async {
+    final file = await repo.archiveInvoicePdf(invoice.id);
+    await refresh();
+    return file;
+  }
+
+  Future<ShareOutcome> openWhatsAppChat(Customer customer) async {
+    final raw = customerWhatsAppNumber(customer.whatsapp, customer.phone);
+    if (raw == null) {
+      return ShareOutcome.fail('Add a WhatsApp or phone number on the customer profile first.');
+    }
+    try {
+      whatsappChatUrl(raw);
+    } on FormatException catch (e) {
+      return ShareOutcome.fail(e.message);
+    }
+    return NativeShare.openWhatsAppChat(number: raw);
+  }
+
   Future<String> saveSignature(Invoice invoice, Uint8List png) async {
     final path = await repo.saveSignature(invoice, png);
+    try {
+      await repo.generatePdf(invoice.id);
+    } catch (e, st) {
+      debugPrint('PDF regenerate after signature failed: $e\n$st');
+    }
     await refresh();
     return path;
   }
@@ -151,9 +222,41 @@ class AppController extends ChangeNotifier {
     required double amount,
     required String method,
     String? reference,
+    int? occurredAt,
   }) async {
-    await repo.recordPayment(invoice: invoice, amount: amount, method: method, reference: reference);
+    await repo.recordPayment(
+      invoice: invoice,
+      amount: amount,
+      method: method,
+      reference: reference,
+      occurredAt: occurredAt,
+    );
     await refresh();
+  }
+
+  Future<List<Txn>> payOutstanding({
+    required String customerId,
+    required double amount,
+    required String method,
+    String? reference,
+    int? occurredAt,
+    String? invoiceId,
+  }) async {
+    final biz = business;
+    if (biz == null) {
+      throw InvoiceSaveException('Create a business profile before recording a payment.');
+    }
+    final created = await repo.payOutstanding(
+      businessId: biz.id,
+      customerId: customerId,
+      amount: amount,
+      method: method,
+      reference: reference,
+      occurredAt: occurredAt,
+      invoiceId: invoiceId,
+    );
+    await refresh();
+    return created;
   }
 
   Future<void> saveTransaction(Txn tx) async {
@@ -176,7 +279,49 @@ class AppController extends ChangeNotifier {
     await refresh();
   }
 
-  Future<void> shareFile({
+  Future<void> saveBusinessLogo(Business business, Uint8List bytes, String displayName) async {
+    await repo.saveBusinessLogo(business, bytes, displayName);
+    await refresh();
+  }
+
+  Future<void> clearBusinessLogo(Business business) async {
+    await repo.clearBusinessLogo(business);
+    await refresh();
+  }
+
+  Future<ShareOutcome> shareInvoice({
+    required Invoice invoice,
+    required String target,
+    Directory? cacheDir,
+  }) async {
+    try {
+      final pdf = await generatePdf(invoice.id);
+      if (pdf == null || !pdf.existsSync()) {
+        return ShareOutcome.fail('Could not build the invoice PDF.');
+      }
+      final cache = cacheDir ?? await getTemporaryDirectory();
+      final staged = await stageInvoicePdfForShare(
+        source: pdf,
+        cacheDir: cache,
+        number: invoice.number,
+      );
+      final customer = customers.where((c) => c.id == invoice.customerId).firstOrNull;
+      return await NativeShare.shareFile(
+        path: staged.path,
+        mime: invoicePdfMime,
+        title: 'Invoice ${invoice.number}',
+        body: 'Please find invoice ${invoice.number} from ${business?.name ?? 'SafeInvoice'}.',
+        email: customer?.email,
+        target: target,
+        displayName: invoicePdfFileName(invoice.number),
+      );
+    } catch (e, st) {
+      debugPrint('shareInvoice failed: $e\n$st');
+      return ShareOutcome.fail('Could not share the invoice PDF. Try generating it again.');
+    }
+  }
+
+  Future<ShareOutcome> shareFile({
     required File file,
     required String title,
     required String body,
@@ -190,6 +335,7 @@ class AppController extends ChangeNotifier {
       body: body,
       email: email,
       target: target,
+      displayName: file.uri.pathSegments.isEmpty ? null : file.uri.pathSegments.last,
     );
   }
 

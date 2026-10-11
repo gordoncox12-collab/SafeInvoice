@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/excel_service.dart';
 import '../../data/native_share.dart';
+import '../../domain/legal.dart';
 import '../../domain/models.dart';
 import '../../domain/money.dart';
 import '../app_controller.dart';
@@ -89,7 +90,11 @@ class _ExcelHubScreenState extends State<ExcelHubScreen> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: DropdownButtonFormField<int>(
-                  initialValue: (mapping[field.$1] ?? -1) < 0 ? -1 : mapping[field.$1],
+                  initialValue: () {
+                    final mapped = mapping[field.$1] ?? -1;
+                    if (mapped < 0 || mapped >= preview!.headers.length) return -1;
+                    return mapped;
+                  }(),
                   decoration: InputDecoration(labelText: field.$2),
                   items: [
                     const DropdownMenuItem(value: -1, child: Text('(skip)')),
@@ -205,6 +210,19 @@ class SettingsScreen extends StatelessWidget {
           Text(
             'Palettes tint the app, navigation and forms. Invoice PDF colours still come from the chosen template.',
             style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 24),
+          Text('Legal', style: Theme.of(context).textTheme.titleMedium),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('Privacy policy'),
+            subtitle: const Text('Offline app. No data is collected or shared.'),
+            onTap: () async {
+              final outcome = await NativeShare.openUrl(privacyPolicyUrl);
+              if (!context.mounted) return;
+              await showSnack(context, outcome.ok ? 'Opening privacy policy' : (outcome.message ?? 'Could not open the policy.'));
+            },
           ),
         ],
       ),
@@ -449,6 +467,17 @@ class _TemplateEditScreenState extends State<TemplateEditScreen> {
             onChanged: (v) => template = t.copyWith(footerText: v),
           ),
           const SizedBox(height: 12),
+          if (t.logoPath != null)
+            Builder(
+              builder: (context) {
+                final file = context.read<AppController>().repo.storage.resolve(t.logoPath!);
+                if (!file.existsSync()) return const Text('Template logo file is missing.');
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: DiskImage(file, height: 56),
+                );
+              },
+            ),
           Wrap(
             spacing: 8,
             children: [
@@ -512,6 +541,7 @@ class _TemplateEditScreenState extends State<TemplateEditScreen> {
         template = template!.copyWith(extraImagePath: path);
       }
     });
+    await app.saveTemplate(template!);
   }
 
   Future<void> _paste() async {

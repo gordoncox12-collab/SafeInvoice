@@ -27,10 +27,13 @@ android {
     defaultConfig {
         applicationId = "app.safeinvoice"
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         resourceConfigurations += listOf("en", "en-rZA")
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+        }
     }
 
     signingConfigs {

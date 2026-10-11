@@ -1,15 +1,28 @@
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import '../domain/balance.dart';
 import '../domain/models.dart';
 import '../domain/money.dart';
 import 'database.dart';
 import 'excel_service.dart';
 import 'local_storage.dart';
 import 'pdf_service.dart';
+import 'share_payload.dart';
+
+/// User-visible failure while saving an invoice. Never crash the UI for these.
+class InvoiceSaveException implements Exception {
+  InvoiceSaveException(this.message, [this.cause]);
+
+  final String message;
+  final Object? cause;
+
+  @override
+  String toString() => message;
+}
 
 class InvoiceRepository {
   InvoiceRepository({
@@ -64,7 +77,9 @@ class InvoiceRepository {
     final existing = await getBusiness(entity.id);
     storage.businessDir(entity.id);
     final saved = entity.copyWith(updatedAt: Za.nowMillis());
-    await db.insert('businesses', saved.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    // INSERT OR REPLACE deletes the row then inserts, which CASCADE-wipes
+    // customers, invoices, products and templates. Always UPDATE in place.
+    await _upsert('businesses', saved.toMap(), saved.id);
     final settings = await getSettings();
     if (settings.activeBusinessId == null) {
       await saveSettings(settings.copyWith(activeBusinessId: saved.id));
@@ -117,11 +132,8 @@ class InvoiceRepository {
     for (final type in FolderType.values) {
       storage.folder(entity.businessId, entity.id, type);
     }
-    await db.insert(
-      'customers',
-      entity.copyWith(updatedAt: Za.nowMillis()).toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    final saved = entity.copyWith(updatedAt: Za.nowMillis());
+    await _upsert('customers', saved.toMap(), saved.id);
   }
 
   Future<void> deleteCustomer(Customer entity) async {
@@ -147,11 +159,8 @@ class InvoiceRepository {
   }
 
   Future<void> saveProduct(Product entity) async {
-    await db.insert(
-      'products',
-      entity.copyWith(updatedAt: Za.nowMillis()).toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    final saved = entity.copyWith(updatedAt: Za.nowMillis());
+    await _upsert('products', saved.toMap(), saved.id);
   }
 
   Future<void> deleteProduct(Product entity) async {
@@ -203,7 +212,18 @@ class InvoiceRepository {
       invoice: invoice,
       items: items.map(InvoiceLineItem.fromMap).toList(),
       images: images.map(InvoiceImage.fromMap).toList(),
+      payments: await invoicePayments(id),
     );
+  }
+
+  Future<List<Txn>> invoicePayments(String invoiceId) async {
+    final rows = await db.query(
+      'transactions',
+      where: 'invoiceId = ?',
+      whereArgs: [invoiceId],
+      orderBy: 'occurredAt ASC',
+    );
+    return rows.map(Txn.fromMap).toList();
   }
 
   (String, int) nextInvoiceNumber(Business business) {
@@ -218,6 +238,60 @@ class InvoiceRepository {
     required List<InvoiceLineItem> items,
     required bool bumpNumber,
   }) async {
+    try {
+      return await _saveInvoiceInner(
+        invoice: invoice,
+        items: items,
+        bumpNumber: bumpNumber,
+      );
+    } on InvoiceSaveException {
+      rethrow;
+    } catch (e, st) {
+      debugPrint('saveInvoice failed: $e\n$st');
+      throw InvoiceSaveException(
+        'Could not save the invoice. Check the customer, line items and try again.',
+        e,
+      );
+    }
+  }
+
+  Future<Invoice> _saveInvoiceInner({
+    required Invoice invoice,
+    required List<InvoiceLineItem> items,
+    required bool bumpNumber,
+  }) async {
+    if (invoice.businessId.trim().isEmpty) {
+      throw InvoiceSaveException('Create a business profile before invoicing.');
+    }
+    final biz = await getBusiness(invoice.businessId);
+    if (biz == null) {
+      throw InvoiceSaveException(
+        'Business is missing. Open More and save the business profile again.',
+      );
+    }
+    final customerId = invoice.customerId.trim();
+    if (customerId.isEmpty) {
+      throw InvoiceSaveException('Select a customer before saving.');
+    }
+    final customer = await getCustomer(customerId);
+    if (customer == null) {
+      throw InvoiceSaveException(
+        'The selected customer was not found. Pick a customer from the list.',
+      );
+    }
+    if (customer.businessId != invoice.businessId) {
+      throw InvoiceSaveException('That customer belongs to a different business.');
+    }
+    if (items.isEmpty) {
+      throw InvoiceSaveException('Add at least one line item.');
+    }
+    final usable = items.where(
+      (i) => i.description.trim().isNotEmpty || (i.productId != null && i.productId!.trim().isNotEmpty),
+    );
+    if (usable.isEmpty) {
+      throw InvoiceSaveException('Add a product or a description on at least one line.');
+    }
+
     final totals = Money.totals(
       lineTotals: items.map((i) => Money.lineTotal(i.quantity, i.unitPrice)).toList(),
       taxable: items.map((i) => i.taxable).toList(),
@@ -226,27 +300,59 @@ class InvoiceRepository {
       vatPercent: invoice.vatPercent,
     );
     final saved = invoice.copyWith(
+      customerId: customerId,
       subtotal: totals.subtotal,
       vatAmount: totals.vat,
       total: totals.total,
+      issuedAt: invoice.issuedAt ?? Za.combineDateWithNow(invoice.issueDate),
       updatedAt: Za.nowMillis(),
     );
-    await db.insert('invoices', saved.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-    await db.delete('invoice_line_items', where: 'invoiceId = ?', whereArgs: [saved.id]);
-    for (final item in items) {
-      await db.insert(
-        'invoice_line_items',
-        item.copyWith().toMap()..['invoiceId'] = saved.id,
-        conflictAlgorithm: ConflictAlgorithm.replace,
+
+    await db.transaction((txn) async {
+      final existing = await txn.query(
+        'invoices',
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [saved.id],
+        limit: 1,
       );
-    }
-    if (bumpNumber) {
-      final biz = await getBusiness(saved.businessId);
-      if (biz != null) {
-        await saveBusiness(biz.copyWith(nextInvoiceNumber: biz.nextInvoiceNumber + 1));
+      if (existing.isEmpty) {
+        await txn.insert('invoices', saved.toMap());
+      } else {
+        await txn.update('invoices', saved.toMap(), where: 'id = ?', whereArgs: [saved.id]);
       }
-    }
+      await txn.delete('invoice_line_items', where: 'invoiceId = ?', whereArgs: [saved.id]);
+      for (final item in items) {
+        final row = Map<String, Object?>.from(item.copyWith().toMap())..['invoiceId'] = saved.id;
+        if (row['productId'] is String && (row['productId'] as String).isEmpty) {
+          row['productId'] = null;
+        }
+        await txn.insert('invoice_line_items', row);
+      }
+      if (bumpNumber) {
+        await txn.rawUpdate(
+          'UPDATE businesses SET nextInvoiceNumber = nextInvoiceNumber + 1, updatedAt = ? WHERE id = ?',
+          [Za.nowMillis(), saved.businessId],
+        );
+      }
+    });
+    await syncInvoicePaymentStatus(saved.id);
     return saved;
+  }
+
+  Future<void> _upsert(String table, Map<String, Object?> values, String id) async {
+    final existing = await db.query(
+      table,
+      columns: ['id'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (existing.isEmpty) {
+      await db.insert(table, values);
+    } else {
+      await db.update(table, values, where: 'id = ?', whereArgs: [id]);
+    }
   }
 
   Future<void> deleteInvoice(Invoice invoice) async {
@@ -263,14 +369,94 @@ class InvoiceRepository {
   }
 
   Future<void> markOverdue() async {
-    final now = Za.todayMillis();
-    final rows = await db.query('invoices', where: "status = 'SENT'");
+    final rows = await db.query(
+      'invoices',
+      where: "status NOT IN ('PAID', 'CANCELLED', 'DRAFT')",
+    );
     for (final row in rows) {
-      final inv = Invoice.fromMap(row);
-      if (inv.dueDate < now) {
-        await setStatus(inv.id, InvoiceStatus.overdue);
-      }
+      await syncInvoicePaymentStatus(row['id']! as String);
     }
+  }
+
+  Future<void> syncInvoicePaymentStatus(String invoiceId) async {
+    final invoice = await getInvoice(invoiceId);
+    if (invoice == null || invoice.status == InvoiceStatus.cancelled) return;
+    final payments = await invoicePayments(invoiceId);
+    final next = InvoiceBalance.of(invoice, payments).suggestedStatus(
+      current: invoice.status,
+      pastDue: invoice.dueDate < Za.todayMillis(),
+    );
+    if (next != invoice.status) {
+      await setStatus(invoiceId, next);
+    }
+  }
+
+  Future<String> savePodSignature(Invoice invoice, Uint8List pngBytes) async {
+    final dir = storage.folder(invoice.businessId, invoice.customerId, FolderType.images);
+    final file = storage.uniqueFile(dir, '${invoice.number}_pod_signature.png');
+    await storage.copyBytes(pngBytes, file);
+    final rel = storage.relativeToRoot(file);
+    await db.update(
+      'invoices',
+      {'podSignaturePath': rel, 'pdfPath': null, 'updatedAt': Za.nowMillis()},
+      where: 'id = ?',
+      whereArgs: [invoice.id],
+    );
+    await indexFile(invoice.businessId, invoice.customerId, FolderType.images, file, 'image/png');
+    return rel;
+  }
+
+  Future<void> setPaymentOption(String invoiceId, PaymentOption? method, {String? note}) async {
+    await db.update(
+      'invoices',
+      {
+        'paymentMethod': method == null ? null : paymentOptionWire(method),
+        'paymentNote': note,
+        'pdfPath': null,
+        'updatedAt': Za.nowMillis(),
+      },
+      where: 'id = ?',
+      whereArgs: [invoiceId],
+    );
+  }
+
+  Future<File?> archiveInvoicePdf(String invoiceId) async {
+    final pdf = await generatePdf(invoiceId);
+    if (pdf == null || !pdf.existsSync()) return null;
+    final details = await getInvoiceDetails(invoiceId);
+    if (details == null) return null;
+    final dest = storage.uniqueFile(
+      storage.invoiceArchiveDir(details.invoice.businessId),
+      invoicePdfFileName(details.invoice.number),
+    );
+    await storage.copyFile(pdf, dest);
+    final rel = storage.relativeToRoot(dest);
+    await db.update(
+      'invoices',
+      {'savedToStoragePath': rel, 'updatedAt': Za.nowMillis()},
+      where: 'id = ?',
+      whereArgs: [details.invoice.id],
+    );
+    await indexFile(
+      details.invoice.businessId,
+      details.invoice.customerId,
+      FolderType.invoices,
+      dest,
+      'application/pdf',
+    );
+    return dest;
+  }
+
+  Future<List<File>> archivedInvoicePdfs(String businessId) async {
+    final dir = storage.invoiceArchiveDir(businessId);
+    if (!dir.existsSync()) return [];
+    final files = dir
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.toLowerCase().endsWith('.pdf'))
+        .toList()
+      ..sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+    return files;
   }
 
   Future<String> saveSignature(Invoice invoice, Uint8List pngBytes) async {
@@ -280,7 +466,7 @@ class InvoiceRepository {
     final rel = storage.relativeToRoot(file);
     await db.update(
       'invoices',
-      {'signaturePath': rel, 'updatedAt': Za.nowMillis()},
+      {'signaturePath': rel, 'pdfPath': null, 'updatedAt': Za.nowMillis()},
       where: 'id = ?',
       whereArgs: [invoice.id],
     );
@@ -320,18 +506,27 @@ class InvoiceRepository {
     }
     template ??= await defaultTemplate(business.id);
     final dir = storage.folder(business.id, customer.id, FolderType.invoices);
-    final dest = File(p.join(dir.path, '${details.invoice.number}.pdf'));
+    final dest = File(p.join(dir.path, invoicePdfFileName(details.invoice.number)));
+    final allInvoices = await invoices(business.id);
+    final allTxs = await transactions(business.id);
+    final unpaidOthers = unpaidOrdersFor(
+      allInvoices,
+      allTxs,
+      customerId: customer.id,
+      excludeInvoiceId: details.invoice.id,
+    );
     await pdf.generate(
       details: details,
       business: business,
       customer: customer,
       template: template,
       dest: dest,
+      unpaidOrders: unpaidOthers,
     );
     final rel = storage.relativeToRoot(dest);
     await db.update(
       'invoices',
-      {'pdfPath': rel, 'updatedAt': Za.nowMillis()},
+      {'pdfPath': rel, 'generatedAt': Za.nowMillis(), 'updatedAt': Za.nowMillis()},
       where: 'id = ?',
       whereArgs: [details.invoice.id],
     );
@@ -344,25 +539,82 @@ class InvoiceRepository {
     required double amount,
     required String method,
     String? reference,
+    int? occurredAt,
   }) async {
+    if (amount <= 0) {
+      throw InvoiceSaveException('Enter a payment amount greater than zero.');
+    }
+    final when = occurredAt ?? Za.nowMillis();
     final tx = Txn(
       id: Za.newId(),
       businessId: invoice.businessId,
       customerId: invoice.customerId,
       invoiceId: invoice.id,
       type: TransactionType.payment,
-      amount: amount,
+      amount: Money.round(amount),
       currency: invoice.currency,
-      occurredAt: Za.nowMillis(),
+      occurredAt: when,
       method: method,
       reference: reference,
       notes: 'Payment for ${invoice.number}',
       createdAt: Za.nowMillis(),
     );
     await saveTransaction(tx);
-    if (amount >= invoice.total) {
-      await setStatus(invoice.id, InvoiceStatus.paid);
+    await db.update(
+      'invoices',
+      {'pdfPath': null, 'updatedAt': Za.nowMillis()},
+      where: 'id = ?',
+      whereArgs: [invoice.id],
+    );
+    await syncInvoicePaymentStatus(invoice.id);
+  }
+
+  Future<List<Txn>> payOutstanding({
+    required String businessId,
+    required String customerId,
+    required double amount,
+    required String method,
+    String? reference,
+    int? occurredAt,
+    String? invoiceId,
+  }) async {
+    if (amount <= 0) {
+      throw InvoiceSaveException('Enter a payment amount greater than zero.');
     }
+    final invoices = await this.invoices(businessId);
+    final txs = await transactions(businessId);
+    var unpaid = unpaidOrdersFor(invoices, txs, customerId: customerId);
+    if (invoiceId != null) {
+      unpaid = unpaid.where((o) => o.invoice.id == invoiceId).toList();
+    }
+    if (unpaid.isEmpty) {
+      throw InvoiceSaveException('Nothing outstanding to pay.');
+    }
+    final allocations = allocateOldestFirst(unpaid, amount);
+    if (allocations.isEmpty) {
+      throw InvoiceSaveException('Nothing outstanding to pay.');
+    }
+    final created = <Txn>[];
+    for (final slice in allocations) {
+      final invoice = await getInvoice(slice.invoiceId);
+      if (invoice == null) continue;
+      await recordPayment(
+        invoice: invoice,
+        amount: slice.amount,
+        method: method,
+        reference: reference,
+        occurredAt: occurredAt,
+      );
+      final rows = await db.query(
+        'transactions',
+        where: 'invoiceId = ?',
+        whereArgs: [invoice.id],
+        orderBy: 'createdAt DESC',
+        limit: 1,
+      );
+      if (rows.isNotEmpty) created.add(Txn.fromMap(rows.first));
+    }
+    return created;
   }
 
   Future<List<Txn>> transactions(String businessId) async {
@@ -517,18 +769,28 @@ class InvoiceRepository {
         whereArgs: [entity.businessId],
       );
     }
-    await db.insert(
-      'invoice_templates',
-      entity.copyWith(updatedAt: Za.nowMillis()).toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    final saved = entity.copyWith(updatedAt: Za.nowMillis());
+    await _upsert('invoice_templates', saved.toMap(), saved.id);
   }
 
   Future<String> saveTemplateBytes(String businessId, Uint8List bytes, String name, {bool logo = false}) async {
     final dir = logo ? storage.logosDir(businessId) : storage.templatesDir(businessId);
-    final dest = storage.uniqueFile(dir, name);
+    final dest = storage.uniqueFile(dir, name.isEmpty ? (logo ? 'logo.png' : 'image.png') : name);
     await storage.copyBytes(bytes, dest);
     return storage.relativeToRoot(dest);
+  }
+
+  Future<Business> saveBusinessLogo(Business business, Uint8List bytes, String displayName) async {
+    final rel = await saveTemplateBytes(business.id, bytes, displayName, logo: true);
+    final saved = business.copyWith(logoPath: rel, updatedAt: Za.nowMillis());
+    await saveBusiness(saved);
+    return saved;
+  }
+
+  Future<Business> clearBusinessLogo(Business business) async {
+    final saved = business.copyWith(clearLogo: true, updatedAt: Za.nowMillis());
+    await saveBusiness(saved);
+    return saved;
   }
 
   Future<File> exportBusinessWorkbook(String businessId, File dest, {bool csv = false}) async {

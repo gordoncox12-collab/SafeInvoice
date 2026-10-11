@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
+# Generate a Play upload keystore locally. Never commit the .jks.
 set -euo pipefail
-cd "$(dirname "$0")/.."
-keytool -genkeypair -v \
-  -keystore android/app/play-upload.jks \
+OUT="${1:-$HOME/safeinvoice-play-upload.jks}"
+keytool -genkeypair -storetype JKS \
+  -keystore "$OUT" \
   -alias upload \
   -keyalg RSA -keysize 2048 -validity 10000 \
   -storepass "${STORE_PASSWORD:?}" \
   -keypass "${KEY_PASSWORD:?}" \
-  -dname "CN=SafeInvoice, OU=Gordon Cox, O=SafeInvoice, L=Johannesburg, ST=Gauteng, C=ZA"
-echo "Wrote android/app/play-upload.jks"
+  -dname "CN=Gordon Cox, OU=SafeInvoice, O=Gordon Cox, L=South Africa, ST=Gauteng, C=ZA"
+echo "Wrote $OUT (keep this file private)"

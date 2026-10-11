@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../domain/models.dart';
 import '../../domain/money.dart';
 import '../app_controller.dart';
+import '../outstanding.dart';
 import '../widgets.dart';
 
 class CustomerListScreen extends StatelessWidget {
@@ -54,7 +55,12 @@ class CustomerListScreen extends StatelessWidget {
                     subtitle: Text(
                       [c.email, c.phone].whereType<String>().where((s) => s.isNotEmpty).join(' · '),
                     ),
-                    trailing: Text('${app.invoices.where((inv) => inv.customerId == c.id).length} inv'),
+                    trailing: app.customerOutstanding(c.id) > 0
+                        ? OutstandingMoney(
+                            app.customerOutstanding(c.id),
+                            currency: app.business?.defaultCurrency ?? 'ZAR',
+                          )
+                        : Text('${app.invoices.where((inv) => inv.customerId == c.id).length} inv'),
                     onTap: () => context.push('/customer/${c.id}'),
                   ),
               ],
@@ -77,6 +83,7 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
   final contact = TextEditingController();
   final email = TextEditingController();
   final phone = TextEditingController();
+  final whatsapp = TextEditingController();
   final address = TextEditingController();
   final city = TextEditingController();
   final province = TextEditingController();
@@ -101,6 +108,7 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
         contact.text = c.contactName ?? '';
         email.text = c.email ?? '';
         phone.text = c.phone ?? '';
+        whatsapp.text = c.whatsapp ?? c.phone ?? '';
         address.text = c.addressLine1 ?? '';
         city.text = c.city ?? '';
         province.text = c.province ?? '';
@@ -118,6 +126,7 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
     contact.dispose();
     email.dispose();
     phone.dispose();
+    whatsapp.dispose();
     address.dispose();
     city.dispose();
     province.dispose();
@@ -142,6 +151,15 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
           TextField(controller: email, decoration: const InputDecoration(labelText: 'Email')),
           const SizedBox(height: 10),
           TextField(controller: phone, decoration: const InputDecoration(labelText: 'Phone')),
+          const SizedBox(height: 10),
+          TextField(
+            controller: whatsapp,
+            decoration: const InputDecoration(
+              labelText: 'WhatsApp number',
+              helperText: 'Used to open a WhatsApp chat. South African 0xx numbers become 27xx.',
+            ),
+            keyboardType: TextInputType.phone,
+          ),
           const SizedBox(height: 10),
           TextField(controller: address, decoration: const InputDecoration(labelText: 'Address')),
           const SizedBox(height: 10),
@@ -177,6 +195,7 @@ class _CustomerEditScreenState extends State<CustomerEditScreen> {
       contactName: contact.text.trim().isEmpty ? null : contact.text.trim(),
       email: email.text.trim().isEmpty ? null : email.text.trim(),
       phone: phone.text.trim().isEmpty ? null : phone.text.trim(),
+      whatsapp: whatsapp.text.trim().isEmpty ? null : whatsapp.text.trim(),
       addressLine1: address.text.trim().isEmpty ? null : address.text.trim(),
       city: city.text.trim().isEmpty ? null : city.text.trim(),
       province: province.text.trim().isEmpty ? null : province.text.trim(),
@@ -218,11 +237,41 @@ class CustomerDetailScreen extends StatelessWidget {
             subtitle: Text([customer.addressLine1, customer.city, customer.province].whereType<String>().where((s) => s.isNotEmpty).join(', ')),
           ),
           Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: OutstandingBanner(
+              amount: app.customerOutstanding(customer.id),
+              currency: app.business?.defaultCurrency ?? 'ZAR',
+              label: 'Total outstanding',
+              onPay: app.customerOutstanding(customer.id) <= 0
+                  ? null
+                  : () => showPayOutstandingDialog(context, customerId: customer.id),
+              onSeeAll: () => context.push('/outstanding?customer=${customer.id}'),
+            ),
+          ),
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: FilledButton.icon(
-              onPressed: () => context.push('/invoice/new?customer=${customer.id}'),
-              icon: const Icon(Icons.add),
-              label: const Text('Invoice this customer'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FilledButton.icon(
+                  onPressed: () => context.push('/invoice/new?customer=${customer.id}'),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Invoice this customer'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final outcome = await app.openWhatsAppChat(customer);
+                    if (!context.mounted) return;
+                    await showSnack(
+                      context,
+                      outcome.ok ? 'Opening WhatsApp chat' : (outcome.message ?? 'Could not open WhatsApp.'),
+                    );
+                  },
+                  icon: const Icon(Icons.chat_outlined),
+                  label: const Text('Open WhatsApp chat'),
+                ),
+              ],
             ),
           ),
           const ListTile(title: Text('Folders on this device')),
@@ -245,6 +294,18 @@ class CustomerDetailScreen extends StatelessWidget {
             onTap: () => context.push('/note/$id/new'),
           ),
           const Divider(),
+          const ListTile(title: Text('Unpaid orders')),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: UnpaidOrdersList(
+              orders: app.unpaidOrders(customerId: customer.id),
+              onPay: (order) => showPayOutstandingDialog(
+                context,
+                customerId: customer.id,
+                invoiceId: order.invoice.id,
+              ),
+            ),
+          ),
           const ListTile(title: Text('Invoices')),
           if (invoices.isEmpty)
             const Padding(
@@ -255,7 +316,12 @@ class CustomerDetailScreen extends StatelessWidget {
             for (final inv in invoices)
               ListTile(
                 title: Text(inv.number),
-                subtitle: Text(Za.money(inv.total, inv.currency)),
+                subtitle: Row(
+                  children: [
+                    Text('${Za.money(inv.total, inv.currency)} · outstanding '),
+                    OutstandingMoney(app.balanceFor(inv).invoiceOutstanding, currency: inv.currency),
+                  ],
+                ),
                 trailing: StatusChip(inv.status),
                 onTap: () => context.push('/invoice-view/${inv.id}'),
               ),

@@ -1,10 +1,17 @@
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/native_share.dart';
+import '../../domain/legal.dart';
 import '../../domain/models.dart';
 import '../../domain/money.dart';
 import '../app_controller.dart';
+import '../outstanding.dart';
 import '../widgets.dart';
 
 class AppShell extends StatelessWidget {
@@ -14,7 +21,7 @@ class AppShell extends StatelessWidget {
   final Widget child;
 
   int get index {
-    if (location.startsWith('/invoices')) return 1;
+    if (location.startsWith('/invoices') || location.startsWith('/outstanding')) return 1;
     if (location.startsWith('/customers')) return 2;
     if (location.startsWith('/more')) return 3;
     return 0;
@@ -163,9 +170,12 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = context.watch<AppController>();
     final biz = app.business;
-    final outstanding = app.invoices.where((i) => i.status == InvoiceStatus.sent || i.status == InvoiceStatus.overdue);
-    final paid = app.invoices.where((i) => i.status == InvoiceStatus.paid);
-    final overdue = app.invoices.where((i) => i.status == InvoiceStatus.overdue);
+    final overdue = app.invoices.where((i) {
+      if (i.status == InvoiceStatus.cancelled || i.status == InvoiceStatus.draft || i.status == InvoiceStatus.paid) {
+        return false;
+      }
+      return i.dueDate < Za.todayMillis() && app.balanceFor(i).invoiceOutstanding > 0;
+    });
     return Scaffold(
       appBar: AppBar(
         title: Text(biz?.name ?? 'SafeInvoice'),
@@ -195,8 +205,10 @@ class HomeScreen extends StatelessWidget {
               _StatCard(label: 'Customers', value: '${app.customers.length}', icon: Icons.people),
               _StatCard(
                 label: 'Outstanding',
-                value: Za.money(outstanding.fold<double>(0, (a, b) => a + b.total), biz?.defaultCurrency ?? 'ZAR'),
+                value: Za.money(app.booksOutstanding(), biz?.defaultCurrency ?? 'ZAR'),
                 icon: Icons.pending_actions,
+                emphasize: app.booksOutstanding() > 0,
+                onTap: () => context.go('/outstanding'),
               ),
               _StatCard(
                 label: 'Overdue',
@@ -205,6 +217,32 @@ class HomeScreen extends StatelessWidget {
               ),
             ],
           ),
+          if (app.booksOutstanding() > 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: OutstandingBanner(
+                amount: app.booksOutstanding(),
+                currency: biz?.defaultCurrency ?? 'ZAR',
+                label: 'Outstanding',
+                onSeeAll: () => context.go('/outstanding'),
+              ),
+            ),
+          if (app.unpaidOrders().isNotEmpty)
+            SectionCard(
+              title: 'Unpaid orders',
+              trailing: TextButton(onPressed: () => context.go('/outstanding'), child: const Text('See all')),
+              child: UnpaidOrdersList(
+                orders: app.unpaidOrders().take(6).toList(),
+                compact: true,
+                customerNameOf: (inv) =>
+                    app.customers.where((c) => c.id == inv.customerId).firstOrNull?.name ?? 'Customer',
+                onPay: (order) => showPayOutstandingDialog(
+                  context,
+                  customerId: order.invoice.customerId,
+                  invoiceId: order.invoice.id,
+                ),
+              ),
+            ),
           SectionCard(
             title: 'Quick actions',
             child: Wrap(
@@ -234,6 +272,23 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
           ),
+          if (app.invoices.any((i) => i.savedForLater))
+            SectionCard(
+              title: 'Saved for later',
+              trailing: TextButton(onPressed: () => context.go('/invoices?filter=drafts'), child: const Text('See drafts')),
+              child: Column(
+                children: [
+                  for (final inv in app.invoices.where((i) => i.savedForLater).take(6))
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(inv.number),
+                      subtitle: Text('${Za.dateTime(inv.displayIssuedAt)} · ${Za.money(inv.total, inv.currency)}'),
+                      trailing: const StatusChip(InvoiceStatus.draft),
+                      onTap: () => context.push('/invoice/${inv.id}'),
+                    ),
+                ],
+              ),
+            ),
           SectionCard(
             title: 'Recent invoices',
             trailing: TextButton(onPressed: () => context.go('/invoices'), child: const Text('See all')),
@@ -258,7 +313,7 @@ class HomeScreen extends StatelessWidget {
           ),
           SectionCard(
             title: 'Collected',
-            child: Text(Za.money(paid.fold<double>(0, (a, b) => a + b.total), biz?.defaultCurrency ?? 'ZAR')),
+            child: Text(Za.money(app.collectedAmount(), biz?.defaultCurrency ?? 'ZAR')),
           ),
         ],
       ),
@@ -341,25 +396,43 @@ class _StepTile extends StatelessWidget {
 }
 
 class _StatCard extends StatelessWidget {
-  const _StatCard({required this.label, required this.value, required this.icon});
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.emphasize = false,
+    this.onTap,
+  });
 
   final String label;
   final String value;
   final IconData icon;
+  final bool emphasize;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final color = emphasize ? outstandingCrimson : Theme.of(context).colorScheme.primary;
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: Theme.of(context).colorScheme.primary),
-            const Spacer(),
-            Text(value, style: Theme.of(context).textTheme.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-          ],
+      color: emphasize ? outstandingCrimson.withValues(alpha: 0.08) : null,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: color),
+              const Spacer(),
+              Text(
+                value,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(color: emphasize ? outstandingCrimson : null),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: emphasize ? outstandingCrimson : null)),
+            ],
+          ),
         ),
       ),
     );
@@ -441,6 +514,19 @@ class MoreScreen extends StatelessWidget {
             leading: Icon(Icons.lock_outline),
             title: Text('Local only'),
             subtitle: Text('No backend. Books stay on this phone.'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip_outlined),
+            title: const Text('Privacy policy'),
+            subtitle: const Text('No data collected or shared'),
+            onTap: () async {
+              final outcome = await NativeShare.openUrl(privacyPolicyUrl);
+              if (!context.mounted) return;
+              await showSnack(
+                context,
+                outcome.ok ? 'Opening privacy policy' : (outcome.message ?? 'Could not open the policy.'),
+              );
+            },
           ),
         ],
       ),
@@ -594,6 +680,47 @@ class _BusinessEditScreenState extends State<BusinessEditScreen> {
           TextField(controller: currency, decoration: const InputDecoration(labelText: 'Default currency')),
           const SizedBox(height: 10),
           TextField(controller: vatPercent, decoration: const InputDecoration(labelText: 'Default VAT %'), keyboardType: TextInputType.number),
+          const SizedBox(height: 16),
+          Text('Business logo', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Used on invoice PDFs when the template has no logo of its own.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          if (existing?.logoPath != null)
+            Builder(
+              builder: (context) {
+                final file = context.read<AppController>().repo.storage.resolve(existing!.logoPath!);
+                if (!file.existsSync()) {
+                  return const Text('Logo file is missing. Choose a new image.');
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: DiskImage(file, height: 72),
+                );
+              },
+            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _pickLogo,
+                icon: const Icon(Icons.image_outlined),
+                label: Text(existing?.logoPath == null ? 'Add logo' : 'Change logo'),
+              ),
+              if (existing?.logoPath != null)
+                TextButton(
+                  onPressed: () async {
+                    await context.read<AppController>().clearBusinessLogo(existing!);
+                    existing = existing!.copyWith(clearLogo: true);
+                    if (mounted) setState(() {});
+                  },
+                  child: const Text('Remove logo'),
+                ),
+            ],
+          ),
           const SizedBox(height: 20),
           FilledButton(onPressed: _save, child: const Text('Save')),
         ],
@@ -601,39 +728,78 @@ class _BusinessEditScreenState extends State<BusinessEditScreen> {
     );
   }
 
-  Future<void> _save() async {
+  Future<void> _save({bool pop = true}) async {
     if (name.text.trim().isEmpty) {
       await showSnack(context, 'Name is required');
       return;
     }
     final now = Za.nowMillis();
     final base = existing;
-    await context.read<AppController>().saveBusiness(
-      Business(
-        id: base?.id ?? Za.newId(),
-        name: name.text.trim(),
-        tradingName: trading.text.trim().isEmpty ? null : trading.text.trim(),
-        email: email.text.trim(),
-        phone: phone.text.trim(),
-        addressLine1: address.text.trim(),
-        city: city.text.trim(),
-        province: province.text.trim(),
-        postalCode: postal.text.trim(),
-        vatNumber: vat.text.trim().isEmpty ? null : vat.text.trim(),
-        registrationNumber: reg.text.trim().isEmpty ? null : reg.text.trim(),
-        bankName: bank.text.trim().isEmpty ? null : bank.text.trim(),
-        bankAccountName: accountName.text.trim().isEmpty ? null : accountName.text.trim(),
-        bankAccountNumber: accountNo.text.trim().isEmpty ? null : accountNo.text.trim(),
-        bankBranchCode: branch.text.trim().isEmpty ? null : branch.text.trim(),
-        invoicePrefix: prefix.text.trim().isEmpty ? 'INV' : prefix.text.trim().toUpperCase(),
-        defaultCurrency: currency.text.trim().isEmpty ? 'ZAR' : currency.text.trim().toUpperCase(),
-        defaultVatPercent: double.tryParse(vatPercent.text) ?? 15,
-        nextInvoiceNumber: base?.nextInvoiceNumber ?? 1,
-        logoPath: base?.logoPath,
-        createdAt: base?.createdAt ?? now,
-        updatedAt: now,
-      ),
+    final entity = Business(
+      id: base?.id ?? Za.newId(),
+      name: name.text.trim(),
+      tradingName: trading.text.trim().isEmpty ? null : trading.text.trim(),
+      email: email.text.trim(),
+      phone: phone.text.trim(),
+      addressLine1: address.text.trim(),
+      city: city.text.trim(),
+      province: province.text.trim(),
+      postalCode: postal.text.trim(),
+      vatNumber: vat.text.trim().isEmpty ? null : vat.text.trim(),
+      registrationNumber: reg.text.trim().isEmpty ? null : reg.text.trim(),
+      bankName: bank.text.trim().isEmpty ? null : bank.text.trim(),
+      bankAccountName: accountName.text.trim().isEmpty ? null : accountName.text.trim(),
+      bankAccountNumber: accountNo.text.trim().isEmpty ? null : accountNo.text.trim(),
+      bankBranchCode: branch.text.trim().isEmpty ? null : branch.text.trim(),
+      invoicePrefix: prefix.text.trim().isEmpty ? 'INV' : prefix.text.trim().toUpperCase(),
+      defaultCurrency: currency.text.trim().isEmpty ? 'ZAR' : currency.text.trim().toUpperCase(),
+      defaultVatPercent: double.tryParse(vatPercent.text) ?? 15,
+      nextInvoiceNumber: base?.nextInvoiceNumber ?? 1,
+      logoPath: base?.logoPath,
+      createdAt: base?.createdAt ?? now,
+      updatedAt: now,
     );
-    if (mounted) context.pop();
+    await context.read<AppController>().saveBusiness(entity);
+    existing = entity;
+    if (pop && mounted) context.pop();
+  }
+
+  Future<void> _pickLogo() async {
+    final app = context.read<AppController>();
+    Uint8List? bytes;
+    var display = 'logo.png';
+    try {
+      final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (picked != null) {
+        bytes = await picked.readAsBytes();
+        display = picked.name;
+      }
+    } catch (_) {
+      bytes = null;
+    }
+    if (bytes == null || bytes.isEmpty) {
+      final file = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
+      bytes = file?.files.single.bytes;
+      display = file?.files.single.name ?? display;
+    }
+    if (bytes == null || bytes.isEmpty) {
+      if (mounted) await showSnack(context, 'No image selected');
+      return;
+    }
+    if (existing == null) {
+      if (name.text.trim().isEmpty) {
+        await showSnack(context, 'Save the business name first, then add a logo.');
+        return;
+      }
+      await _save(pop: false);
+    }
+    final biz = existing ?? app.business;
+    if (biz == null) return;
+    await app.saveBusinessLogo(biz, bytes, display);
+    existing = await app.repo.getBusiness(biz.id);
+    if (mounted) {
+      setState(() {});
+      await showSnack(context, 'Logo saved. New invoices and PDFs will use it.');
+    }
   }
 }

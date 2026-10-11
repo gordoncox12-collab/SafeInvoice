@@ -35,6 +35,50 @@ void main() {
     expect(copy.description, 'Hourly');
   });
 
+  test('product dropdown mapping fills line item', () {
+    final product = Product(
+      id: 'p2',
+      businessId: 'b1',
+      name: 'Site visit',
+      description: 'Call-out',
+      unitPrice: 650,
+      taxable: false,
+      createdAt: 1,
+      updatedAt: 1,
+    );
+    final line = InvoiceLineItem(
+      id: 'l1',
+      invoiceId: 'i1',
+      position: 0,
+      description: '',
+    ).applyProduct(product);
+    expect(line.productId, 'p2');
+    expect(line.description, 'Site visit — Call-out');
+    expect(line.unitPrice, 650);
+    expect(line.taxable, isFalse);
+    final totals = Money.totals(
+      lineTotals: [Money.lineTotal(2, line.unitPrice)],
+      taxable: [line.taxable],
+      vatPercent: 15,
+    );
+    expect(totals.subtotal, closeTo(1300, 0.001));
+    expect(totals.vat, closeTo(0, 0.001));
+    expect(totals.total, closeTo(1300, 0.001));
+  });
+
+  test('theme prefs round-trip unknown palette safely', () {
+    final settings = AppSettings.fromMap({
+      'themeMode': 'DARK',
+      'accentPalette': 'CORAL',
+      'activeBusinessId': 'b1',
+    });
+    expect(settings.themeMode, ThemeModeOption.dark);
+    expect(settings.accentPalette, AccentPalette.coral);
+    expect(AppSettings.fromMap({'themeMode': 'nope', 'accentPalette': 'missing'}).themeMode, ThemeModeOption.system);
+    expect(AppSettings.fromMap({'themeMode': 'LIGHT', 'accentPalette': 'missing'}).accentPalette, AccentPalette.forest);
+    expect(AppSettings(themeMode: ThemeModeOption.light, accentPalette: AccentPalette.mint).toMap()['accentPalette'], 'MINT');
+  });
+
   test('vat fifteen percent on net', () {
     final totals = Money.totals(lineTotals: [1000, 500], vatPercent: 15);
     expect(totals.subtotal, closeTo(1500, 0.001));
