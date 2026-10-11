@@ -20,7 +20,8 @@ import 'package:safeinvoice/ui/screens/invoice_screens.dart';
 import 'package:safeinvoice/ui/screens/shell.dart';
 import 'package:safeinvoice/ui/theme.dart';
 
-const _shot = String.fromEnvironment('PLAY_SHOT', defaultValue: 'home');
+const _shot = String.fromEnvironment('PLAY_SHOT', defaultValue: 'cycle');
+const playShotOrder = ['home', 'editor', 'unpaid', 'pay', 'pdf', 'customer', 'invoices', 'settings'];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,11 +33,39 @@ Future<void> main() async {
   runApp(PlayScreenshotApp(controller: controller, shot: _shot));
 }
 
-class PlayScreenshotApp extends StatelessWidget {
+class PlayScreenshotApp extends StatefulWidget {
   const PlayScreenshotApp({super.key, required this.controller, required this.shot});
 
   final AppController controller;
   final String shot;
+
+  @override
+  State<PlayScreenshotApp> createState() => _PlayScreenshotAppState();
+}
+
+class _PlayScreenshotAppState extends State<PlayScreenshotApp> {
+  late String current = widget.shot == 'cycle' ? playShotOrder.first : widget.shot;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.shot == 'cycle') {
+      Future<void>(() async {
+        const path = '/sdcard/Android/data/app.safeinvoice/files/play_shot.txt';
+        while (mounted) {
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+          try {
+            final file = File(path);
+            if (!file.existsSync()) continue;
+            final next = file.readAsStringSync().trim();
+            if (next.isNotEmpty && next != current && (playShotOrder.contains(next))) {
+              setState(() => current = next);
+            }
+          } catch (_) {}
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,13 +75,13 @@ class PlayScreenshotApp extends StatelessWidget {
       platformBrightness: Brightness.light,
     );
     return ChangeNotifierProvider.value(
-      value: controller,
+      value: widget.controller,
       child: MaterialApp(
         locale: const Locale('en', 'ZA'),
         supportedLocales: const [Locale('en', 'ZA'), Locale('en')],
         debugShowCheckedModeBanner: false,
         theme: base,
-        home: _shotHome(controller, shot),
+        home: _shotHome(widget.controller, current),
       ),
     );
   }

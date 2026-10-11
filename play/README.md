@@ -10,7 +10,9 @@ Gordon uploads the AAB in [Play Console](https://play.google.com/console) himsel
 - **versionCode:** 10 (Play requires each new upload to increase this)
 - **targetSdk:** 36 (required for new apps / updates from 31 August 2026)
 
-Sideload APKs stay on the same release as `SafeInvoice-2.6.1.apk`.
+Sideload APKs stay on the same release as `SafeInvoice-2.6.1.apk`. Upload **`SafeInvoice-2.6.1.aab`** (the Play pack), not the older `SafeInvoice-flutter-release.aab`.
+
+Phone screenshots in `play/store/phone/` were captured on an Android emulator (1080×1920) from a **screenshot-only** entrypoint (`tool/play_screenshot_main.dart`). That seed is not compiled into the store AAB. A fresh install of the AAB opens **Create your business** with no demo data.
 
 ## Listing and policy files
 
